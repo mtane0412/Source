@@ -22,9 +22,9 @@
     },
     "packageManager": "pnpm@11.11.0",
     "author": {
-        "name": "Ghost Foundation",
-        "email": "hello@ghost.org",
-        "url": "https://ghost.org/"
+        "name": "mtane0412",
+        "email": "mtane0412@gmail.com",
+        "url": "https://github.com/mtane0412"
     },
     "gpm": {
         "type": "theme",
