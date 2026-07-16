@@ -75,6 +75,10 @@ function zipper(done) {
     const filename = require('./package.json').name + '.zip';
 
     pump([
+        // encoding: false でバイナリファイル(フォント・画像)をUTF-8として
+        // デコード/エンコードしないようにする。デフォルトのままだと、
+        // 有効なUTF-8として解釈できないバイト列が置換文字(U+FFFD)に化けて
+        // フォントファイル等が破損する。
         src([
             '**',
             '!node_modules', '!node_modules/**',
@@ -85,7 +89,7 @@ function zipper(done) {
             '!AGENTS.md',
             '!CLAUDE.md',
             '!gulpfile.js'
-        ]),
+        ], {encoding: false}),
         zip(filename),
         dest('dist/')
     ], handleError(done));
