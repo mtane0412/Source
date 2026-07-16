@@ -5,6 +5,11 @@
 # 事前準備: リポジトリの Settings > Secrets and variables > Actions で
 # GHOST_ADMIN_API_URL / GHOST_ADMIN_API_KEY を登録すること。
 # 値は Ghost Admin > Integrations で作成した Custom Integration から取得する。
+#
+# 注意: Ghost本体は、アップロードされるzipのファイル名が casper.zip / source.zip の場合、
+# 「デフォルトテーマの上書きは禁止」として無条件で拒否する
+# (TryGhost/Ghost の core/server/services/themes/storage.js 参照)。
+# pnpm zip の出力名はそのまま source.zip になるため、アップロード前に別名へリネームする。
 name: Deploy Theme
 
 on:
@@ -41,9 +46,12 @@ jobs:
       - name: Build theme zip
         run: pnpm run zip
 
+      - name: Rename zip (Ghost rejects a literal source.zip as an attempt to override the default theme)
+        run: mv dist/source.zip dist/mtane0412-source.zip
+
       - name: Deploy Ghost Theme
         uses: TryGhost/action-deploy-theme@da65fcb5f545abd5e801830bf991f6becc9d6fcc # v2.0.0
         with:
           api-url: ${{ secrets.GHOST_ADMIN_API_URL }}
           api-key: ${{ secrets.GHOST_ADMIN_API_KEY }}
-          file: dist/source.zip
+          file: dist/mtane0412-source.zip
