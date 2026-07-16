@@ -25,3 +25,11 @@ options (such as "LINE Seed JP") exist alongside mono. --}}
         {{> "typography/line-seed-jp"}}
     {{/match}}
 {{/match}}
+
+{{#match @custom.title_font "Noto Sans JP"}}
+    {{> "typography/noto-sans-jp"}}
+{{else}}
+    {{#match @custom.body_font "Noto Sans JP"}}
+        {{> "typography/noto-sans-jp"}}
+    {{/match}}
+{{/match}}

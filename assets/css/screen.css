@@ -68,6 +68,7 @@ production stylesheet in assets/built/screen.css
     --font-serif-alt: Georgia, Times, serif;
     --font-mono: "JetBrains Mono", Menlo, Consolas, Monaco, "Liberation Mono", "Lucida Console", monospace;
     --font-lineseed: "LINE Seed JP", var(--font-sans);
+    --font-notosans: "Noto Sans JP", var(--font-sans);
     --container-width: 1320px;
     --container-gap: clamp(24px, 1.7032rem + 1.9355vw, 48px);
     --grid-gap: 42px;
@@ -2624,6 +2625,12 @@ figcaption a {
     --factor: 1;
 }
 
+/* Noto Sans JPもLINE Seed JPと同様にゴシック体でsans-serifに近い視覚サイズのため、
+   --factorは1のまま明示しておく。 */
+.has-notosans-title:not([class*=" gh-font-heading"]):not([class^="gh-font-heading"]) {
+    --factor: 1;
+}
+
 .has-sans-title:not([class*=" gh-font-heading"]):not([class^="gh-font-heading"]) :is(.is-title, .gh-content :is(h2, h3)) {
     font-family: var(--gh-font-heading, var(--font-sans));
 }
@@ -2641,6 +2648,10 @@ figcaption a {
     font-family: var(--gh-font-heading, var(--font-lineseed));
 }
 
+.has-notosans-title:not([class*=" gh-font-heading"]):not([class^="gh-font-heading"]) :is(.is-title, .gh-content :is(h2, h3)) {
+    font-family: var(--gh-font-heading, var(--font-notosans));
+}
+
 .has-sans-body:not([class*=" gh-font-body"]):not([class^="gh-font-body"]) .is-body {
     font-family: var(--gh-font-body, var(--font-sans));
 }
@@ -2651,6 +2662,10 @@ figcaption a {
 
 .has-lineseed-body:not([class*=" gh-font-body"]):not([class^="gh-font-body"]) .is-body {
     font-family: var(--gh-font-body, var(--font-lineseed));
+}
+
+.has-notosans-body:not([class*=" gh-font-body"]):not([class^="gh-font-body"]) .is-body {
+    font-family: var(--gh-font-body, var(--font-notosans));
 }
 
 .has-serif-title:not([class*=" gh-font-heading"]):not([class^="gh-font-heading"]) .gh-header.is-classic .gh-header-title {
@@ -2685,11 +2700,19 @@ figcaption a {
     font-size: calc(1.6rem*var(--factor, 1));
 }
 
+.has-notosans-title:not([class*=" gh-font-heading"]):not([class^="gh-font-heading"]) .gh-featured-feed .gh-card-title {
+    font-size: calc(1.6rem*var(--factor, 1));
+}
+
 .has-serif-title:not([class*=" gh-font-heading"]):not([class^="gh-font-heading"]) .gh-header.is-highlight .gh-featured-feed .gh-card-title {
     font-size: clamp(1.6rem, 0.23vw + 1.51rem, 1.8rem);
 }
 
 .has-lineseed-title:not([class*=" gh-font-heading"]):not([class^="gh-font-heading"]) .gh-header.is-highlight .gh-featured-feed .gh-card-title {
+    font-size: calc(clamp(1.4rem, 0.23vw + 1.31rem, 1.6rem) * var(--factor, 1));
+}
+
+.has-notosans-title:not([class*=" gh-font-heading"]):not([class^="gh-font-heading"]) .gh-header.is-highlight .gh-featured-feed .gh-card-title {
     font-size: calc(clamp(1.4rem, 0.23vw + 1.31rem, 1.6rem) * var(--factor, 1));
 }
 
@@ -2734,6 +2757,11 @@ figcaption a {
 
 .has-lineseed-title:not([class*=" gh-font-heading"]):not([class^="gh-font-heading"]) .gh-header.is-magazine .gh-header-inner>.gh-card .gh-card-title,
 .has-lineseed-title:not([class*=" gh-font-heading"]):not([class^="gh-font-heading"]) .gh-header.is-highlight .gh-header-left .gh-card-title {
+    font-size: calc(clamp(2.8rem, 1.36vw + 2.25rem, 4rem) * var(--factor, 1));
+}
+
+.has-notosans-title:not([class*=" gh-font-heading"]):not([class^="gh-font-heading"]) .gh-header.is-magazine .gh-header-inner>.gh-card .gh-card-title,
+.has-notosans-title:not([class*=" gh-font-heading"]):not([class^="gh-font-heading"]) .gh-header.is-highlight .gh-header-left .gh-card-title {
     font-size: calc(clamp(2.8rem, 1.36vw + 2.25rem, 4rem) * var(--factor, 1));
 }
 
