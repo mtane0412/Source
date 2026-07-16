@@ -1,0 +1,25 @@
+<link rel="preload" as="font" type="font/woff2" href="{{asset "fonts/noto-sans-jp-regular.woff2"}}" crossorigin="anonymous">
+<link rel="preload" as="font" type="font/woff2" href="{{asset "fonts/noto-sans-jp-bold.woff2"}}" crossorigin="anonymous">
+<style>
+    {{!-- Noto Sans JPは日本語フォントのため、他の書体と異なりunicode-rangeによる制限を
+    行わない(ラテン文字だけでなく日本語グリフ一式が必要なため)。また静的フォントとして
+    切り出しているため、単一の可変ウェイト範囲(100 900)ではなくRegular/Boldをそれぞれ
+    別の@font-faceとして宣言している。font-displayは"optional"ではなく"swap"にしている。
+    ファイルサイズが大きく、"optional"では初回描画でフォント切り替えがスキップされが
+    ちで、フォントを追加した意味が薄れてしまうため。 --}}
+    @font-face {
+        font-family: "Noto Sans JP";
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url({{asset "fonts/noto-sans-jp-regular.woff2"}}) format("woff2");
+    }
+
+    @font-face {
+        font-family: "Noto Sans JP";
+        font-style: normal;
+        font-weight: 700;
+        font-display: swap;
+        src: url({{asset "fonts/noto-sans-jp-bold.woff2"}}) format("woff2");
+    }
+</style>

@@ -116,7 +116,8 @@
                     "Modern sans-serif",
                     "Elegant serif",
                     "Consistent mono",
-                    "LINE Seed JP"
+                    "LINE Seed JP",
+                    "Noto Sans JP"
                 ],
                 "default": "Modern sans-serif"
             },
@@ -125,7 +126,8 @@
                 "options": [
                     "Modern sans-serif",
                     "Elegant serif",
-                    "LINE Seed JP"
+                    "LINE Seed JP",
+                    "Noto Sans JP"
                 ],
                 "default": "Modern sans-serif"
             },
