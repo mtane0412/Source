@@ -115,7 +115,8 @@
                 "options": [
                     "Modern sans-serif",
                     "Elegant serif",
-                    "Consistent mono"
+                    "Consistent mono",
+                    "LINE Seed JP"
                 ],
                 "default": "Modern sans-serif"
             },
@@ -123,7 +124,8 @@
                 "type": "select",
                 "options": [
                     "Modern sans-serif",
-                    "Elegant serif"
+                    "Elegant serif",
+                    "LINE Seed JP"
                 ],
                 "default": "Modern sans-serif"
             },

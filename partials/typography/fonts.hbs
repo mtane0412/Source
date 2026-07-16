@@ -1,15 +1,27 @@
 {{!-- Sans-serif font is always loaded, because it's the default font for some part of the theme regardless of the settings --}}
 {{> "typography/sans"}}
 
-{{#match @custom.title_font "Modern sans-serif"}}
+{{!-- Each additional typeface is loaded independently based on whether title_font or body_font
+selects it, rather than as a single title_font-driven branch. The previous version's catch-all
+{{else}} assumed "not sans, not serif" always meant mono, which breaks once more typeface
+options (such as "LINE Seed JP") exist alongside mono. --}}
+
+{{#match @custom.title_font "Elegant serif"}}
+    {{> "typography/serif"}}
+{{else}}
     {{#match @custom.body_font "Elegant serif"}}
         {{> "typography/serif"}}
     {{/match}}
-{{else match @custom.title_font "Elegant serif"}}
-    {{> "typography/serif"}}
-{{else}}
+{{/match}}
+
+{{#match @custom.title_font "Consistent mono"}}
     {{> "typography/mono"}}
-    {{#match @custom.body_font "Elegant serif"}}
-        {{> "typography/serif"}}
+{{/match}}
+
+{{#match @custom.title_font "LINE Seed JP"}}
+    {{> "typography/line-seed-jp"}}
+{{else}}
+    {{#match @custom.body_font "LINE Seed JP"}}
+        {{> "typography/line-seed-jp"}}
     {{/match}}
 {{/match}}

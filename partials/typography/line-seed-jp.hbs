@@ -1,0 +1,25 @@
+<link rel="preload" as="font" type="font/woff2" href="{{asset "fonts/line-seed-jp-regular.woff2"}}" crossorigin="anonymous">
+<link rel="preload" as="font" type="font/woff2" href="{{asset "fonts/line-seed-jp-bold.woff2"}}" crossorigin="anonymous">
+<style>
+    {{!-- LINE Seed JP is a Japanese font, so unlike the other typefaces in this theme it is not
+    restricted with unicode-range (its glyph set is needed in full, not just Latin). It is also a
+    static (non-variable) font, so Regular and Bold are declared as separate @font-face rules
+    instead of a single 100 900 weight range. font-display is "swap" rather than "optional"
+    because the file is large enough that "optional" would usually skip the swap on first paint,
+    defeating the purpose of adding the font. --}}
+    @font-face {
+        font-family: "LINE Seed JP";
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url({{asset "fonts/line-seed-jp-regular.woff2"}}) format("woff2");
+    }
+
+    @font-face {
+        font-family: "LINE Seed JP";
+        font-style: normal;
+        font-weight: 700;
+        font-display: swap;
+        src: url({{asset "fonts/line-seed-jp-bold.woff2"}}) format("woff2");
+    }
+</style>
