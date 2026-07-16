@@ -1,0 +1,49 @@
+# main へのマージ後、gscan によるテーマ検証(pnpm test:ci)を通過した場合のみ、
+# pnpm zip でビルドしたテーマzip(dist/source.zip、ファイル名は package.json の name に由来)を
+# Ghost Admin API 経由で本番サイトへ自動デプロイするワークフロー。
+#
+# 事前準備: リポジトリの Settings > Secrets and variables > Actions で
+# GHOST_ADMIN_API_URL / GHOST_ADMIN_API_KEY を登録すること。
+# 値は Ghost Admin > Integrations で作成した Custom Integration から取得する。
+name: Deploy Theme
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: lts/*
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Validate theme (gscan)
+        run: pnpm run test:ci
+
+      - name: Build theme zip
+        run: pnpm run zip
+
+      - name: Deploy Ghost Theme
+        uses: TryGhost/action-deploy-theme@da65fcb5f545abd5e801830bf991f6becc9d6fcc # v2.0.0
+        with:
+          api-url: ${{ secrets.GHOST_ADMIN_API_URL }}
+          api-key: ${{ secrets.GHOST_ADMIN_API_KEY }}
+          file: dist/source.zip
