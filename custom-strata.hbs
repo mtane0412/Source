@@ -9,7 +9,8 @@
 
     引用タグ(#ref-<slug>)は scripts/hyperstrata-sync.mjs が自動付与する。内部タグは foreach の既定では
     除外されるため visibility="all" を指定する。get ヘルパーの limit は Ghost 6 で 100 件が上限
-    (gscan もそれ以上を警告する)ため、公開記事が 100 件を超えた場合は古い記事がグラフに含まれない。
+    (gscan もそれ以上を警告する)ため、新しい順(published_at desc)に取得し、公開記事が 100 件を
+    超えた場合は古い記事がグラフに含まれない。並び順は JS 側で公開日の昇順に整える。
 --}}
 
 {{#post}}
@@ -31,7 +32,7 @@
             {{content}}
         </section>
 
-        <section class="gh-strata gh-canvas" data-strata>
+        <section class="gh-strata gh-canvas" data-strata data-strata-label="{{t "Citation graph"}}">
             <ul class="gh-strata-legend" aria-hidden="true">
                 <li><span class="gh-strata-legend-line"></span>{{t "Reference"}}</li>
                 <li><span class="gh-strata-legend-line is-correction"></span>{{t "Correction"}}</li>
@@ -40,7 +41,7 @@
                 <li><span class="gh-strata-legend-line is-reversal"></span>{{t "Reversal"}}</li>
             </ul>
             <ol class="gh-strata-list" data-strata-list>
-                {{#get "posts" include="tags" limit="100" order="published_at asc" as |posts|}}
+                {{#get "posts" include="tags" limit="100" order="published_at desc" as |posts|}}
                     {{#foreach posts}}
                         <li
                             data-slug="{{slug}}"

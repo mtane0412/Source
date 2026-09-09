@@ -2683,9 +2683,22 @@ figcaption a {
 
 .gh-strata-svg {
     display: block;
-    max-width: 100%;
+    min-width: 720px;
     height: auto;
     font-size: 14px;
+}
+
+/* グラフ描画後も記事一覧を支援技術向けに残す(視覚的には非表示) */
+.gh-strata-list.is-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 .gh-strata-axis {

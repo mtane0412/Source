@@ -6,7 +6,7 @@
  *
  * - ノード: 記事。クリックで記事ページへ遷移する
  * - エッジ: 引用関係(引用元 → 引用先)。種別タグ(#correction 等)があれば線の見た目を変える
- * - JavaScript が無効な環境では元の記事一覧がそのまま表示される
+ * - JavaScript が無効な環境では元の記事一覧がそのまま表示される(有効時も支援技術向けに残す)
  *
  * レイアウト計算(buildLayout)は DOM に依存しない純粋関数として window.HyperstrataGraph に公開し、
  * scripts/strata-graph.test.mjs から検証する。
@@ -114,7 +114,7 @@
      * レイアウトを SVG として描画する。
      *
      * @param {ReturnType<typeof buildLayout>} layout
-     * @param {{axisX: number, paddingTop: number, paddingBottom: number, width: number, maxArcWidth: number, nodeRadius: number, titleMaxLength: number}} options
+     * @param {{axisX: number, paddingTop: number, paddingBottom: number, width: number, maxArcWidth: number, nodeRadius: number, titleMaxLength: number, label: string}} options
      * @returns {SVGSVGElement}
      */
     function renderSvg(layout, options) {
@@ -124,7 +124,7 @@
             viewBox: '0 0 ' + options.width + ' ' + height,
             width: options.width,
             height: height,
-            role: 'img'
+            'aria-label': options.label
         });
         const nodeY = {};
         layout.nodes.forEach(function (node) {
@@ -224,13 +224,15 @@
             paddingBottom: 24,
             maxArcWidth: 160,
             nodeRadius: 6,
-            titleMaxLength: 32
+            titleMaxLength: 32,
+            label: container.dataset.strataLabel || ''
         });
         const figure = document.createElement('div');
         figure.className = 'gh-strata-graph';
         figure.appendChild(svg);
         container.insertBefore(figure, list);
-        list.hidden = true;
+        // 一覧は支援技術向けに残しつつ視覚的には非表示にする
+        list.classList.add('is-sr-only');
         container.classList.add('is-rendered');
     }
 
