@@ -52,21 +52,6 @@
         </header>
 
         <section class="gh-content gh-canvas is-body{{#if @custom.enable_drop_caps_on_posts}} drop-cap{{/if}}">
-            {{!-- Hyperstrata: 訂正通知。#correction を付けた記事がこの記事を引用している場合、
-                  本文冒頭に訂正記事の存在を明示する(イミュータブル運用で元記事を書き換えないための補完)。
-                  フィルタは「この記事への引用タグ」と「#correction」の両方を持つ記事に絞る --}}
-            {{#get "posts" filter="tags:hash-ref-{{slug}}+tags:hash-correction" limit="10" order="published_at asc" as |corrections|}}
-                {{#if corrections}}
-                    <aside class="gh-correction-notice" role="note" aria-label="{{t "Correction"}}">
-                        <p class="gh-correction-notice-title">{{t "This post has been corrected by a later post:"}}</p>
-                        <ul class="gh-correction-notice-list">
-                            {{#foreach corrections}}
-                                <li><a href="{{url}}">{{title}}</a><time datetime="{{date format="YYYY-MM-DD"}}">{{date}}</time></li>
-                            {{/foreach}}
-                        </ul>
-                    </aside>
-                {{/if}}
-            {{/get}}
             {{content}}
         </section>
 
@@ -93,20 +78,9 @@
         <div class="gh-citations-group">
             <h2 class="gh-citations-title">{{t "Cited by"}}</h2>
             <ul class="gh-citations-list">
-                {{!-- 引用元記事に付けた種別タグ(#correction / #supplement / #continuation / #reversal)を
-                      バッジとして表示する。has ヘルパーは内部タグも名前で判定できる。種別タグが無ければバッジ無し --}}
-                {{#get "posts" include="tags" filter="tags:hash-ref-{{slug}}" limit="100" order="published_at asc" as |citing|}}
+                {{#get "posts" filter="tags:hash-ref-{{slug}}" limit="100" order="published_at asc" as |citing|}}
                     {{#foreach citing}}
-                        <li>
-                            <span class="gh-citations-item">
-                                {{#has tag="#correction"}}<span class="gh-citation-kind is-correction">{{t "Correction"}}</span>{{/has}}
-                                {{#has tag="#supplement"}}<span class="gh-citation-kind is-supplement">{{t "Supplement"}}</span>{{/has}}
-                                {{#has tag="#continuation"}}<span class="gh-citation-kind is-continuation">{{t "Continuation"}}</span>{{/has}}
-                                {{#has tag="#reversal"}}<span class="gh-citation-kind is-reversal">{{t "Reversal"}}</span>{{/has}}
-                                <a href="{{url}}">{{title}}</a>
-                            </span>
-                            <time datetime="{{date format="YYYY-MM-DD"}}">{{date}}</time>
-                        </li>
+                        <li><a href="{{url}}">{{title}}</a><time datetime="{{date format="YYYY-MM-DD"}}">{{date}}</time></li>
                     {{/foreach}}
                 {{/get}}
             </ul>
