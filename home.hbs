@@ -1,6 +1,12 @@
 {{!< default}}
 {{!-- The tag above means: insert everything in this file into the body of the default.hbs template --}}
 
+{{!-- Hyperstrata: 左側固定の引用グラフペイン。テーマ設定(show_strata_pane)で OFF にできる。
+     Ghost はトップページに home.hbs を使う(index.hbs はページ送り /page/N/ 用)ため、ここに置く --}}
+{{#if @custom.show_strata_pane}}
+    {{> "strata-pane"}}
+{{/if}}
+
 {{> "components/header" headerStyle=@custom.header_style}}
 
 {{#match @custom.header_style "!=" "Highlight"}}
