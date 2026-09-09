@@ -2643,8 +2643,8 @@ figcaption a {
     text-decoration: underline;
 }
 
-/* Hyperstrata: 記事ページ・トップページ左側の固定引用グラフペイン(partials/strata-pane.hbs)。
-   body に post-template または home-template と、has-strata-pane(テーマ設定 show_strata_pane が ON)が
+/* Hyperstrata: 記事ページ左側の固定引用グラフペイン(partials/strata-pane.hbs)。
+   body に post-template と has-strata-pane(テーマ設定 show_strata_pane が ON)が
    揃ったときだけ .gh-viewport をペイン幅ぶん右にオフセットする。ヘッダー・フッターも .gh-viewport 内にあるため一緒にずれる。
    狭い画面ではペインを --strata-pane-collapsed-width の帯まで畳み、トグルボタンで開閉する */
 :root {
@@ -2668,8 +2668,7 @@ figcaption a {
     --strata-boundary: rgb(214 180 140 / 0.3);
 }
 
-.post-template.has-strata-pane .gh-viewport,
-.home-template.has-strata-pane .gh-viewport {
+.post-template.has-strata-pane .gh-viewport {
     margin-left: var(--strata-pane-width);
 }
 
@@ -2862,8 +2861,7 @@ figcaption a {
         --strata-pane-width: min(86vw, 340px);
     }
 
-    .post-template.has-strata-pane .gh-viewport,
-    .home-template.has-strata-pane .gh-viewport {
+    .post-template.has-strata-pane .gh-viewport {
         margin-left: var(--strata-pane-collapsed-width);
     }
 
@@ -3888,4 +3886,161 @@ body[class^="gh-font-heading"]:not(.gh-font-heading-fira-sans):not(.gh-font-head
 
 .gh-button-share:hover {
     border-color: rgba(0, 0, 0, 0.5);
+}
+
+/* Hyperstrata: トップページの地層タイムライン(partials/strata-timeline.hbs)。
+   記事カード(.gh-strata-timeline-row)を縦に並べ、JS が背後に SVG(.gh-strata-timeline-svg)を重ねる。
+   左側のガター(--strata-timeline-gutter)に月ラベル列(--strata-timeline-label-width)と種・根の列を置く。
+   帯・境界線・種・根の色は固定ペインと同じクラス(.gh-strata-pane-stratum など)を使う */
+.gh-strata-timeline {
+    --strata-timeline-gutter: 176px;
+    --strata-timeline-label-width: 72px;
+    /* 地層の帯は画面の端まで届かせる(SVG が左右にはみ出した分をここで切り取る) */
+    overflow: hidden;
+    margin-top: 16px;
+    padding-bottom: 64px;
+}
+
+.gh-strata-timeline-rows {
+    position: relative;
+    margin: 0;
+    /* 下の余白は、ページ外へ伸びる根の束がフェードして本数ラベルが収まる場所 */
+    padding: 0 0 36px;
+    list-style: none;
+}
+
+.gh-strata-timeline-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.gh-strata-timeline-row {
+    position: relative;
+    padding: 20px 0 20px var(--strata-timeline-gutter);
+}
+
+.gh-strata-timeline-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-width: 720px;
+}
+
+.gh-strata-timeline-card:hover {
+    opacity: 1;
+}
+
+.gh-strata-timeline-title {
+    font-size: calc(1.9rem * var(--factor, 1));
+    font-weight: 725;
+    letter-spacing: -0.014em;
+    line-height: 1.3;
+}
+
+.gh-strata-timeline-card:hover .gh-strata-timeline-title {
+    opacity: 0.8;
+}
+
+.gh-strata-timeline-excerpt {
+    display: -webkit-box;
+    overflow-y: hidden;
+    font-size: 1.45rem;
+    line-height: 1.4;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.gh-strata-timeline-meta {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 1.25rem;
+    font-weight: 500;
+    line-height: 1.4;
+    color: var(--color-secondary-text);
+}
+
+.gh-strata-timeline-meta svg {
+    width: 12px;
+    height: 12px;
+}
+
+.gh-strata-timeline-date {
+    font-family: var(--font-mono);
+}
+
+.gh-strata-timeline-month-label {
+    fill: var(--color-secondary-text);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-anchor: end;
+}
+
+.gh-strata-timeline-month-label.is-compact {
+    font-size: 9px;
+    text-anchor: start;
+}
+
+.gh-strata-timeline-axis {
+    stroke: var(--strata-boundary);
+    stroke-width: 1;
+}
+
+/* ページ外の古い記事へ伸びる根。下端に向かって透明になる(色は stop の CSS で決める) */
+.gh-strata-timeline-offpage-edge {
+    fill: none;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+}
+
+.gh-strata-timeline-fade-start {
+    stop-color: var(--strata-seed);
+    stop-opacity: 0.7;
+}
+
+.gh-strata-timeline-fade-end {
+    stop-color: var(--strata-seed);
+    stop-opacity: 0;
+}
+
+.gh-strata-timeline-offpage-label {
+    fill: var(--strata-seed);
+    font-family: var(--font-mono);
+    font-size: 10px;
+}
+
+.gh-strata-timeline-more {
+    margin-top: 32px;
+    padding-left: var(--strata-timeline-gutter);
+    font-size: 1.6rem;
+    font-weight: 650;
+}
+
+.gh-strata-timeline-more a {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.gh-strata-timeline-more svg {
+    width: 12px;
+    height: 12px;
+}
+
+@media (max-width: 599px) {
+    .gh-strata-timeline {
+        --strata-timeline-gutter: 56px;
+        --strata-timeline-label-width: 0px;
+    }
+
+    .gh-strata-timeline-row {
+        padding-block: 16px;
+    }
+
+    .gh-strata-timeline-title {
+        font-size: calc(1.6rem * var(--factor, 1));
+    }
 }

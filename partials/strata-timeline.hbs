@@ -1,0 +1,46 @@
+{{!--
+    Hyperstrata: トップページの地層タイムライン。
+
+    記事カードを公開日の降順(新しい記事が上=地表)に並べ、assets/js/strata-graph.js が各行の位置を計測して
+    背後に SVG を重ねる。SVG には月ごとの地層の帯、左のガターに種(記事)と根(引用線)を描く。
+    引用関係は scripts/hyperstrata-sync.mjs が生成する assets/graph.json から data-strata-graph-url で fetch する。
+    表示中の行に無い古い記事への引用は、ガターの端でフェードする 1 本の束にまとめ、本数を data-strata-offpage-label
+    の文言(% を本数に置き換える)で示す。JavaScript が無効な環境では通常の記事一覧として表示される。
+    記事は @config.posts_per_page 件まで表示し、続きは /page/2/(index.hbs)に送る。
+--}}
+<section class="gh-strata-timeline gh-outer" data-strata-timeline data-strata-graph-url="{{asset "graph.json"}}" data-strata-label="{{t "Citation graph"}}" data-strata-offpage-label="{{t "+% to deeper layers"}}">
+    <div class="gh-inner">
+        <ol class="gh-strata-timeline-rows" data-strata-rows>
+            {{#get "posts" limit=@config.posts_per_page}}
+                {{#foreach posts}}
+                    <li class="gh-strata-timeline-row {{post_class}}" data-strata-row data-slug="{{slug}}" data-month="{{date format="YYYY-MM"}}">
+                        <a class="gh-strata-timeline-card" href="{{url}}">
+                            <h3 class="gh-strata-timeline-title is-title" data-strata-row-title>{{title}}</h3>
+                            {{#if custom_excerpt}}
+                                <p class="gh-strata-timeline-excerpt is-body">{{custom_excerpt}}</p>
+                            {{else}}
+                                {{#if excerpt}}
+                                    <p class="gh-strata-timeline-excerpt is-body">{{excerpt}}</p>
+                                {{/if}}
+                            {{/if}}
+                            <footer class="gh-strata-timeline-meta">
+                                {{#unless access}}
+                                    {{^has visibility="public"}}
+                                        {{> "icons/lock"}}
+                                    {{/has}}
+                                {{/unless}}
+                                <time class="gh-strata-timeline-date" datetime="{{date format="YYYY-MM-DD"}}">{{date format="DD MMM YYYY"}}</time>
+                            </footer>
+                        </a>
+                    </li>
+                {{/foreach}}
+            {{/get}}
+        </ol>
+
+        {{#match pagination.pages ">" 1}}
+            <div class="gh-strata-timeline-more is-title">
+                <a href="{{@site.url}}/page/2/">{{t "See all"}} {{> "icons/arrow"}}</a>
+            </div>
+        {{/match}}
+    </div>
+</section>

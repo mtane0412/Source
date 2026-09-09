@@ -371,3 +371,81 @@ test('parseGraph: posts が配列でない・必須項目が欠けている場�
     assert.throws(() => parseGraph({posts: [{slug: 'a', title: 'A', url: '/a/', refs: []}]}), /publishedAt/);
     assert.throws(() => parseGraph({posts: [{slug: 'a', title: 'A', url: '/a/', publishedAt: '2026-01-01T00:00:00.000Z'}]}), /refs/);
 });
+
+/* ------------------------------------------------------------------
+ * トップページの地層タイムライン(partials/strata-timeline.hbs)向けレイアウト
+ * ------------------------------------------------------------------ */
+
+/** タイムライン用 API を読み込む */
+function タイムラインを読み込む() {
+    const window = {};
+    vm.runInNewContext(スクリプト, {window});
+    const api = window.HyperstrataGraph;
+    return {
+        buildTimelineLayout: (rows, posts) => JSON.parse(JSON.stringify(api.buildTimelineLayout(rows, posts)))
+    };
+}
+
+/** テンプレートが出力し JS が計測した行(新しい順)。month は行の公開月、top/bottom は行の上下端、y は種の中心 */
+const 行 = [
+    {slug: 'newest', month: '2026-03', top: 0, bottom: 100, y: 40},
+    {slug: 'middle', month: '2026-01', top: 100, bottom: 200, y: 140},
+    {slug: 'oldest', month: '2026-01', top: 200, bottom: 300, y: 240}
+];
+
+const タイムライン記事 = [
+    {slug: 'newest', title: '最新の記事', url: '/newest/', publishedAt: '2026-03-15T12:00:00.000Z', refs: ['oldest', 'ancient', 'prehistoric']},
+    {slug: 'middle', title: '中間の記事', url: '/middle/', publishedAt: '2026-01-20T12:00:00.000Z', refs: ['oldest']},
+    {slug: 'oldest', title: '最初の記事', url: '/oldest/', publishedAt: '2026-01-15T12:00:00.000Z', refs: []},
+    {slug: 'ancient', title: 'ページ外の古い記事', url: '/ancient/', publishedAt: '2025-06-01T12:00:00.000Z', refs: []}
+];
+
+test('buildTimelineLayout: 連続する同じ月の行を 1 つの地層の帯にまとめ、上から順に深さ(depth)が増える', () => {
+    const {buildTimelineLayout} = タイムラインを読み込む();
+    const layout = buildTimelineLayout(行, タイムライン記事);
+    assert.deepEqual(layout.bands, [
+        {label: '2026-03', top: 0, bottom: 100, depth: 0},
+        {label: '2026-01', top: 100, bottom: 300, depth: 1}
+    ]);
+});
+
+test('buildTimelineLayout: ノードは行の順に並び、行番号・種の y 座標・列(col)を持つ', () => {
+    const {buildTimelineLayout} = タイムラインを読み込む();
+    const layout = buildTimelineLayout(行, タイムライン記事);
+    assert.deepEqual(layout.nodes.map(node => [node.slug, node.row, node.y]), [['newest', 0, 40], ['middle', 1, 140], ['oldest', 2, 240]]);
+    layout.nodes.forEach(node => assert.equal(typeof node.col, 'number'));
+});
+
+test('buildTimelineLayout: エッジは表示中の行どうしの引用だけを持ち、上(fromRow)から下(toRow)へ向く', () => {
+    const {buildTimelineLayout} = タイムラインを読み込む();
+    const layout = buildTimelineLayout(行, タイムライン記事);
+    assert.deepEqual(layout.edges.map(edge => [edge.from, edge.to, edge.fromRow, edge.toRow]), [
+        ['newest', 'oldest', 0, 2],
+        ['middle', 'oldest', 1, 2]
+    ]);
+    layout.edges.forEach(edge => {
+        assert.equal(typeof edge.fromCol, 'number');
+        assert.equal(typeof edge.toCol, 'number');
+    });
+});
+
+test('buildTimelineLayout: 表示中の行に無い記事への引用は、行ごとにページ外の本数(offPage)として数える', () => {
+    const {buildTimelineLayout} = タイムラインを読み込む();
+    const layout = buildTimelineLayout(行, タイムライン記事);
+    // newest は ancient(graph.json にある)と prehistoric(graph.json にも無い)の 2 本がページ外
+    assert.deepEqual(layout.offPage, [{slug: 'newest', row: 0, count: 2}]);
+});
+
+test('buildTimelineLayout: graph.json に無い行(同期前の新しい記事)は引用の無い孤立した記事として扱う', () => {
+    const {buildTimelineLayout} = タイムラインを読み込む();
+    const 未同期の行 = [{slug: 'unsynced', month: '2026-04', top: 0, bottom: 100, y: 40}].concat(行);
+    const layout = buildTimelineLayout(未同期の行, タイムライン記事);
+    assert.equal(layout.nodes[0].slug, 'unsynced');
+    assert.equal(layout.edges.some(edge => edge.from === 'unsynced' || edge.to === 'unsynced'), false);
+    assert.equal(layout.offPage.some(item => item.slug === 'unsynced'), false);
+});
+
+test('buildTimelineLayout: 行が無ければ空のレイアウトを返す', () => {
+    const {buildTimelineLayout} = タイムラインを読み込む();
+    assert.deepEqual(buildTimelineLayout([], タイムライン記事), {bands: [], nodes: [], edges: [], offPage: []});
+});
