@@ -18,7 +18,8 @@
         "pretest:ci": "pnpm zip",
         "preship": "pnpm test",
         "ship": "STATUS=$(git status --porcelain); echo $STATUS; if [ -z \"$STATUS\" ]; then pnpm version && git push --follow-tags; else echo \"Uncommitted changes found.\" && exit 1; fi",
-        "postship": "git fetch && gulp release"
+        "postship": "git fetch && gulp release",
+        "test:scripts": "node --test \"scripts/**/*.test.mjs\""
     },
     "packageManager": "pnpm@11.11.0",
     "author": {

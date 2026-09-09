@@ -88,7 +88,8 @@ function zipper(done) {
             '!pnpm-workspace.yaml',
             '!AGENTS.md',
             '!CLAUDE.md',
-            '!gulpfile.js'
+            '!gulpfile.js',
+            '!scripts', '!scripts/**'
         ], {encoding: false}),
         zip(filename),
         dest('dist/')
