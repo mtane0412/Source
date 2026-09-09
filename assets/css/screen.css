@@ -2562,7 +2562,7 @@ figcaption a {
 .gh-strata-legend-line {
     display: inline-block;
     width: 28px;
-    border-top: 2px solid var(--color-dark-border);
+    border-top: 2px solid var(--strata-root);
 }
 
 .gh-strata-legend-line.is-correction {
@@ -2636,23 +2636,61 @@ figcaption a {
     border: 0;
 }
 
+/* 地層の帯(年ごと)。新しい年(上)ほど浅く薄い色、古い年(下)ほど深く濃い色にする(data-depth は 0〜6 で頭打ち) */
+.gh-strata-stratum {
+    fill: rgb(var(--strata-soil) / 0.04);
+}
+
+.gh-strata-stratum[data-depth="1"] {
+    fill: rgb(var(--strata-soil) / 0.08);
+}
+
+.gh-strata-stratum[data-depth="2"] {
+    fill: rgb(var(--strata-soil) / 0.12);
+}
+
+.gh-strata-stratum[data-depth="3"] {
+    fill: rgb(var(--strata-soil) / 0.16);
+}
+
+.gh-strata-stratum[data-depth="4"] {
+    fill: rgb(var(--strata-soil) / 0.2);
+}
+
+.gh-strata-stratum[data-depth="5"] {
+    fill: rgb(var(--strata-soil) / 0.24);
+}
+
+.gh-strata-stratum[data-depth="6"] {
+    fill: rgb(var(--strata-soil) / 0.28);
+}
+
+/* 地層の境界線(波線) */
+.gh-strata-year-line {
+    fill: none;
+    stroke: var(--strata-boundary);
+    stroke-width: 1;
+}
+
 .gh-strata-axis {
-    stroke: var(--color-border);
-    stroke-width: 2;
+    stroke: var(--strata-boundary);
+    stroke-width: 1;
 }
 
 .gh-strata-year {
     fill: var(--color-secondary-text);
+    font-family: var(--font-mono);
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.04em;
 }
 
+/* 引用の線は、新しい記事(上)から古い層(下)へ伸びる「根」として土色で描く */
 .gh-strata-edge {
     fill: none;
-    stroke: var(--color-dark-border);
-    stroke-width: 1.5;
-    opacity: 0.6;
+    stroke: var(--strata-root);
+    stroke-width: 1.6;
+    stroke-linecap: round;
     transition: opacity 0.15s ease;
 }
 
@@ -2687,10 +2725,12 @@ figcaption a {
     cursor: pointer;
 }
 
+/* 記事は「種」(縦長の楕円) */
 .gh-strata-dot {
-    fill: var(--color-white);
-    stroke: var(--color-dark-border);
+    fill: var(--strata-seed);
+    stroke: var(--background-color);
     stroke-width: 2;
+    transition: fill 0.15s ease;
 }
 
 .gh-strata-dot.is-correction {

@@ -32,10 +32,11 @@ const 記事 = [
     {slug: 'correction', title: '紹介記事の訂正', url: '/correction/', publishedAt: '2026-05-20T00:00:00.000Z', refs: ['introduction', 'unknown-slug'], kind: 'correction'}
 ];
 
-test('buildLayout: ノードは公開日の昇順に並び、y座標が単調増加する', () => {
+test('buildLayout: ノードは新しい記事が上(公開日の降順)に並び、y座標が単調増加する', () => {
     const {buildLayout} = 読み込む();
     const layout = buildLayout([記事[2], 記事[0], 記事[1]], {minGap: 40, pixelsPerDay: 1});
-    assert.deepEqual(layout.nodes.map(node => node.slug), ['introduction', 'limits', 'correction']);
+    // 地表(上)が新しい記事、深い層(下)が古い記事
+    assert.deepEqual(layout.nodes.map(node => node.slug), ['correction', 'limits', 'introduction']);
     assert.ok(layout.nodes[0].y < layout.nodes[1].y);
     assert.ok(layout.nodes[1].y < layout.nodes[2].y);
 });
@@ -47,22 +48,24 @@ test('buildLayout: 近接する公開日でも最小間隔(minGap)を確保す�
         {slug: 'b', title: 'b', url: '/b/', publishedAt: '2026-01-01T01:00:00.000Z', refs: [], kind: ''}
     ];
     const layout = buildLayout(同日, {minGap: 40, pixelsPerDay: 1});
+    assert.deepEqual(layout.nodes.map(node => node.slug), ['b', 'a']);
     assert.equal(layout.nodes[1].y - layout.nodes[0].y, 40);
 });
 
 test('buildLayout: 経過日数に応じて間隔が広がる(pixelsPerDay)', () => {
     const {buildLayout} = 読み込む();
     const layout = buildLayout([記事[0], 記事[1]], {minGap: 40, pixelsPerDay: 2});
-    // 2026-01-10 → 2026-03-01 は 50 日
+    // 2026-01-10 → 2026-03-01 は 50 日。新しい limits が上(y 小)、古い introduction が下(y 大)
+    assert.deepEqual(layout.nodes.map(node => node.slug), ['limits', 'introduction']);
     assert.equal(layout.nodes[1].y - layout.nodes[0].y, 100);
 });
 
-test('buildLayout: 引用関係は「引用元 → 引用先」のエッジになり、種別が付く', () => {
+test('buildLayout: 引用関係は「引用元 → 引用先」のエッジになり(新しい記事の順)、種別が付く', () => {
     const {buildLayout} = 読み込む();
     const layout = buildLayout(記事, {minGap: 40, pixelsPerDay: 1});
     assert.deepEqual(layout.edges, [
-        {from: 'limits', to: 'introduction', kind: ''},
-        {from: 'correction', to: 'introduction', kind: 'correction'}
+        {from: 'correction', to: 'introduction', kind: 'correction'},
+        {from: 'limits', to: 'introduction', kind: ''}
     ]);
 });
 
@@ -72,7 +75,7 @@ test('buildLayout: 一覧に存在しない slug への引用はエッジにし�
     assert.ok(layout.edges.every(edge => edge.to !== 'unknown-slug'));
 });
 
-test('buildLayout: 年が変わる最初のノードに年ラベルを付ける', () => {
+test('buildLayout: 年ごとの区切り(yearMarks)は新しい年から順に、その年で最も新しいノードの位置に置く', () => {
     const {buildLayout} = 読み込む();
     const 複数年 = [
         {slug: 'a', title: 'a', url: '/a/', publishedAt: '2025-12-31T00:00:00.000Z', refs: [], kind: ''},
@@ -80,8 +83,10 @@ test('buildLayout: 年が変わる最初のノードに年ラベルを付ける'
         {slug: 'c', title: 'c', url: '/c/', publishedAt: '2026-06-01T00:00:00.000Z', refs: [], kind: ''}
     ];
     const layout = buildLayout(複数年, {minGap: 40, pixelsPerDay: 1});
-    assert.deepEqual(layout.yearMarks.map(mark => mark.year), [2025, 2026]);
-    assert.equal(layout.yearMarks[1].y, layout.nodes[1].y);
+    // ノードは c(2026-06), b(2026-01), a(2025-12) の順。2026 の区切りは c、2025 の区切りは a の位置
+    assert.deepEqual(layout.yearMarks.map(mark => mark.year), [2026, 2025]);
+    assert.equal(layout.yearMarks[0].y, layout.nodes[0].y);
+    assert.equal(layout.yearMarks[1].y, layout.nodes[2].y);
 });
 
 test('buildLayout: 空配列でもノード・エッジ・年ラベルが空の結果を返す', () => {

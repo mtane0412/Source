@@ -4,13 +4,14 @@
     Ghost 管理画面でページの Template に「Strata」を選ぶと使われる。
 
     サーバー側では公開記事の一覧を <li> に data 属性(slug / 公開日 / 引用先 slug / 種別)付きで描画し、
-    assets/js/strata-graph.js がそれを読み取って SVG のアーク図を描く。
+    assets/js/strata-graph.js がそれを読み取って SVG のアーク図を描く。見た目は左側の固定ペインと同じ
+    「地層の中を種と根が伸びる」デザイン(年ごとの帯を地層として塗り分け、記事は種、引用の線は根)。
     JavaScript が無効な環境では、この一覧がそのまま記事へのリンクとして表示される。
 
     引用タグ(#ref-<slug>)は scripts/hyperstrata-sync.mjs が自動付与する。内部タグは foreach の既定では
     除外されるため visibility="all" を指定する。get ヘルパーの limit は Ghost 6 で 100 件が上限
     (gscan もそれ以上を警告する)ため、新しい順(published_at desc)に取得し、公開記事が 100 件を
-    超えた場合は古い記事がグラフに含まれない。並び順は JS 側で公開日の昇順に整える。
+    超えた場合は古い記事がグラフに含まれない。並び順は JS 側で公開日の降順(新しい記事が上=地表)に整える。
 --}}
 
 {{#post}}
