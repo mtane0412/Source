@@ -3,7 +3,7 @@
  *
  * Ghost Admin API との通信を伴う処理はテスト対象外とし、
  * 本文HTMLからの引用先slug抽出、タグ差分の計算、
- * Admin API 用トークン生成、不要になった引用タグの判定を検証する。
+ * Admin API 用トークン生成、不要になった引用タグの判定、graph.json の組み立てを検証する。
  */
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,6 +15,9 @@ import {
     createAdminToken,
     buildRefTagsQuery,
     selectOrphanRefTags,
+    buildGraph,
+    serializeGraph,
+    GRAPH_JSON_PATH,
     REF_TAG_PREFIX
 } from './hyperstrata-sync.mjs';
 
@@ -168,4 +171,47 @@ test('selectOrphanRefTags: 記事数(count.posts)が取得できていない引�
         {id: 'tag-1', name: `${REF_TAG_PREFIX}old-note`, slug: 'hash-ref-old-note'}
     ];
     assert.throws(() => selectOrphanRefTags(tags), /count\.posts/);
+});
+
+// ---------------------------------------------------------------------------
+// graph.json の生成(#25)
+// ---------------------------------------------------------------------------
+
+/** Admin API が返す記事の最小限の形(graph.json 生成に使う項目のみ) */
+const グラフ用記事 = [
+    {slug: 'hyperstrata-introduction', title: 'Hyperstrata 紹介', url: 'https://example.com/hyperstrata-introduction/', published_at: '2026-01-10T00:00:00.000Z'},
+    {slug: 'digital-garden-limits', title: 'デジタルガーデンの限界', url: 'https://example.com/digital-garden-limits/', published_at: '2026-03-01T00:00:00.000Z'},
+    {slug: 'correction-of-first-note', title: '最初のノートの訂正', url: 'https://example.com/correction-of-first-note/', published_at: '2026-03-01T00:00:00.000Z'}
+];
+
+test('buildGraph: 記事を公開日の降順(同日は slug 順)に並べ、slug/title/url/publishedAt/refs だけを含める', () => {
+    const referencedSlugsBySlug = new Map([
+        ['hyperstrata-introduction', []],
+        ['digital-garden-limits', ['hyperstrata-introduction']],
+        ['correction-of-first-note', ['digital-garden-limits', 'hyperstrata-introduction']]
+    ]);
+    // 入力順に依存しないことを確認するため、公開日順ではない順で渡す
+    const graph = buildGraph({posts: [グラフ用記事[0], グラフ用記事[2], グラフ用記事[1]], referencedSlugsBySlug});
+    assert.deepEqual(graph, {
+        posts: [
+            {slug: 'correction-of-first-note', title: '最初のノートの訂正', url: 'https://example.com/correction-of-first-note/', publishedAt: '2026-03-01T00:00:00.000Z', refs: ['digital-garden-limits', 'hyperstrata-introduction']},
+            {slug: 'digital-garden-limits', title: 'デジタルガーデンの限界', url: 'https://example.com/digital-garden-limits/', publishedAt: '2026-03-01T00:00:00.000Z', refs: ['hyperstrata-introduction']},
+            {slug: 'hyperstrata-introduction', title: 'Hyperstrata 紹介', url: 'https://example.com/hyperstrata-introduction/', publishedAt: '2026-01-10T00:00:00.000Z', refs: []}
+        ]
+    });
+});
+
+test('buildGraph: 引用先の対応表に無い記事があれば例外を投げる(引用抽出の漏れを黙って空にしない)', () => {
+    const referencedSlugsBySlug = new Map([['hyperstrata-introduction', []]]);
+    assert.throws(() => buildGraph({posts: グラフ用記事, referencedSlugsBySlug}), /digital-garden-limits/);
+});
+
+test('serializeGraph: 2 スペースインデントの JSON に末尾改行を付けて返す(差分検出のため出力を安定させる)', () => {
+    const graph = {posts: [{slug: 'a', title: 'A', url: '/a/', publishedAt: '2026-01-01T00:00:00.000Z', refs: []}]};
+    assert.equal(serializeGraph(graph), JSON.stringify(graph, null, 2) + '\n');
+    assert.equal(serializeGraph(graph), serializeGraph(JSON.parse(serializeGraph(graph))));
+});
+
+test('GRAPH_JSON_PATH: テーマの assets 配下に置く(テーマ zip に同梱され {{asset}} で配信できる位置)', () => {
+    assert.equal(GRAPH_JSON_PATH, 'assets/graph.json');
 });

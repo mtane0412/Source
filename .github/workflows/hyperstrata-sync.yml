@@ -1,11 +1,18 @@
 # Hyperstrata の引用ネットワーク(References / Cited By)を成立させるため、
-# 公開済み記事の本文リンクから引用タグ(#ref-<slug>)を自動付与するワークフロー。
+# 公開済み記事の本文リンクから引用タグ(#ref-<slug>)を自動付与し、
+# 引用グラフ用の assets/graph.json を生成するワークフロー。
 # 処理内容は scripts/hyperstrata-sync.mjs を参照。
 #
 # Ghost の Webhook は任意ヘッダーを付けられず GitHub の repository_dispatch を直接叩けないため、
 # 定期実行(cron)と手動実行(workflow_dispatch)で同期する。
 #
+# graph.json に差分があるときだけ main にコミット・push し、テーマを再配布するために
+# deploy-theme.yml を workflow_dispatch で起動する(GITHUB_TOKEN による push は
+# 他のワークフローの push トリガーを起動しないため、明示的に呼ぶ必要がある)。
+# 差分が無ければコミットもデプロイも行わない。dry_run のときは何も書き換えない。
+#
 # 事前準備: deploy-theme.yml と同じ Secrets(GHOST_ADMIN_API_URL / GHOST_ADMIN_API_KEY)を使う。
+# リポジトリの Settings > Actions > General の Workflow permissions を Read and write にすること。
 name: Hyperstrata Sync
 
 on:
@@ -19,25 +26,55 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write
+  actions: write
+
+# 15 分ごとの実行が重なって同じ変更を二重に push しないようにする
+concurrency:
+  group: hyperstrata-sync
+  cancel-in-progress: false
 
 jobs:
   sync:
-    name: Sync citation tags
+    name: Sync citation tags and graph.json
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          persist-credentials: false
+          # graph.json を main に push するため、GITHUB_TOKEN の認証情報を残す
+          persist-credentials: true
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: lts/*
 
-      - name: Sync citation tags via Ghost Admin API
+      - name: Sync citation tags and generate graph.json via Ghost Admin API
         env:
           GHOST_ADMIN_API_URL: ${{ secrets.GHOST_ADMIN_API_URL }}
           GHOST_ADMIN_API_KEY: ${{ secrets.GHOST_ADMIN_API_KEY }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: node scripts/hyperstrata-sync.mjs $([ "$DRY_RUN" = "true" ] && echo --dry-run)
+
+      - name: Commit and push graph.json if changed
+        id: commit
+        if: inputs.dry_run != true
+        run: |
+          if git diff --quiet -- assets/graph.json; then
+            echo "graph.json に差分はありません"
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/graph.json
+          git commit -m "Update Hyperstrata graph.json"
+          git push origin HEAD:main
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy theme with the updated graph.json
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run deploy-theme.yml --repo "$GH_REPO" --ref main

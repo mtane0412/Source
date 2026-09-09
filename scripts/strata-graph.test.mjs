@@ -346,3 +346,28 @@ test('strataBoundaryPath: 波線は指定した y から始まり、右端(width
     const 座標 = path.trim().split(/\s+/);
     assert.equal(Number(座標[座標.length - 2]), 200);
 });
+
+// ---------------------------------------------------------------------------
+// graph.json の読み取り(#25)
+// ---------------------------------------------------------------------------
+
+/** parseGraph を読み込む(戻り値はテスト側レルムの値に正規化する) */
+function parseGraphを読み込む() {
+    const window = {};
+    vm.runInNewContext(スクリプト, {window});
+    return data => JSON.parse(JSON.stringify(window.HyperstrataGraph.parseGraph(data)));
+}
+
+test('parseGraph: graph.json の posts をそのまま記事配列として返す', () => {
+    const parseGraph = parseGraphを読み込む();
+    const posts = parseGraph({posts: 記事});
+    assert.deepEqual(posts, 記事);
+});
+
+test('parseGraph: posts が配列でない・必須項目が欠けている場合は例外を投げる', () => {
+    const parseGraph = parseGraphを読み込む();
+    assert.throws(() => parseGraph({}), /posts/);
+    assert.throws(() => parseGraph({posts: 'not-an-array'}), /posts/);
+    assert.throws(() => parseGraph({posts: [{slug: 'a', title: 'A', url: '/a/', refs: []}]}), /publishedAt/);
+    assert.throws(() => parseGraph({posts: [{slug: 'a', title: 'A', url: '/a/', publishedAt: '2026-01-01T00:00:00.000Z'}]}), /refs/);
+});
