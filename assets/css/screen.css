@@ -2840,6 +2840,11 @@ figcaption a {
     pointer-events: none;
 }
 
+/* display: flex がブラウザ標準の [hidden] { display: none } より優先されるため、hidden 属性を明示的に効かせる */
+.gh-strata-pane-tooltip[hidden] {
+    display: none;
+}
+
 .gh-strata-pane-tooltip-title {
     font-weight: 600;
     overflow-wrap: anywhere;
