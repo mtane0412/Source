@@ -34,13 +34,6 @@
         </section>
 
         <section class="gh-strata gh-canvas" data-strata data-strata-label="{{t "Citation graph"}}">
-            <ul class="gh-strata-legend" aria-hidden="true">
-                <li><span class="gh-strata-legend-line"></span>{{t "Reference"}}</li>
-                <li><span class="gh-strata-legend-line is-correction"></span>{{t "Correction"}}</li>
-                <li><span class="gh-strata-legend-line is-supplement"></span>{{t "Supplement"}}</li>
-                <li><span class="gh-strata-legend-line is-continuation"></span>{{t "Continuation"}}</li>
-                <li><span class="gh-strata-legend-line is-reversal"></span>{{t "Reversal"}}</li>
-            </ul>
             <ol class="gh-strata-list" data-strata-list>
                 {{#get "posts" include="tags" limit="100" order="published_at desc" as |posts|}}
                     {{#foreach posts}}
@@ -48,7 +41,6 @@
                             data-slug="{{slug}}"
                             data-published="{{date format="YYYY-MM-DD[T]HH:mm:ssZ"}}"
                             data-refs="{{#foreach tags visibility="all"}}{{#match slug "~^" "hash-ref-"}}{{description}},{{/match}}{{/foreach}}"
-                            data-kind="{{#has tag="#correction"}}correction{{else}}{{#has tag="#supplement"}}supplement{{else}}{{#has tag="#continuation"}}continuation{{else}}{{#has tag="#reversal"}}reversal{{/has}}{{/has}}{{/has}}{{/has}}"
                         >
                             <a href="{{url}}">{{title}}</a>
                             <time datetime="{{date format="YYYY-MM-DD"}}">{{date}}</time>

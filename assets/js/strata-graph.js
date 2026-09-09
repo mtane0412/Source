@@ -17,7 +17,7 @@
  *    種にマウスを乗せると HTML のツールチップでタイトルと公開日を表示する
  *
  * - ノード: 記事。クリックで記事ページへ遷移する
- * - エッジ: 引用関係(引用元 → 引用先)。種別タグ(#correction 等)があれば線の見た目を変える
+ * - エッジ: 引用関係(引用元 → 引用先)
  * - JavaScript が無効な環境では元の記事一覧がそのまま表示される(有効時も支援技術向けに残す)
  *
  * レイアウト計算(buildLayout / buildPaneLayout / assignColumns / computeEmphasis / buildStrataBands / strataBoundaryPath)は DOM に依存しない
@@ -26,8 +26,6 @@
 (function () {
     const SVG_NS = 'http://www.w3.org/2000/svg';
     const MS_PER_DAY = 24 * 60 * 60 * 1000;
-    /** 引用の種別。data-kind に入る値と一致させる */
-    const KNOWN_KINDS = ['correction', 'supplement', 'continuation', 'reversal'];
 
     /**
      * 記事一覧からグラフのレイアウト(ノード座標・エッジ・年の区切り)を計算する。
@@ -36,7 +34,7 @@
      * 基本とし、隣接ノードとの間隔が minGap を下回る場合は minGap まで押し下げる
      * (同日公開の記事が重ならないようにするため)。yearMarks は年ごとの地層の上端(その年で最も新しいノードの位置)。
      *
-     * @param {Array<{slug: string, title: string, url: string, publishedAt: string, refs: string[], kind: string}>} posts
+     * @param {Array<{slug: string, title: string, url: string, publishedAt: string, refs: string[]}>} posts
      * @param {{minGap: number, pixelsPerDay: number}} options
      * @returns {{nodes: object[], edges: object[], yearMarks: object[], height: number}}
      */
@@ -71,7 +69,7 @@
                 yearMarks.push({year: year, y: y});
                 previousYear = year;
             }
-            nodes.push({slug: post.slug, title: post.title, url: post.url, publishedAt: post.publishedAt, kind: post.kind, y: y});
+            nodes.push({slug: post.slug, title: post.title, url: post.url, publishedAt: post.publishedAt, y: y});
             previousY = y;
         });
 
@@ -82,7 +80,7 @@
         sorted.forEach(function (post) {
             post.refs.forEach(function (ref) {
                 if (slugs.has(ref) && ref !== post.slug) {
-                    edges.push({from: post.slug, to: ref, kind: post.kind});
+                    edges.push({from: post.slug, to: ref});
                 }
             });
         });
@@ -104,8 +102,7 @@
                 title: link.textContent.trim(),
                 url: link.getAttribute('href'),
                 publishedAt: item.dataset.published,
-                refs: refs,
-                kind: KNOWN_KINDS.indexOf(item.dataset.kind) === -1 ? '' : item.dataset.kind
+                refs: refs
             };
         });
     }
@@ -196,7 +193,7 @@
             // 引用元(新しい記事)から引用先(古い記事)へ、左に膨らむ弧を描く
             const sweep = fromY > toY ? 1 : 0;
             const path = createElement('path', {
-                class: 'gh-strata-edge' + (edge.kind ? ' is-' + edge.kind : ''),
+                class: 'gh-strata-edge',
                 d: 'M ' + options.axisX + ' ' + fromY + ' A ' + rx + ' ' + ry + ' 0 0 ' + sweep + ' ' + options.axisX + ' ' + toY,
                 'data-from': edge.from,
                 'data-to': edge.to
@@ -212,7 +209,7 @@
             const anchor = createElement('a', {class: 'gh-strata-node', href: node.url, 'data-slug': node.slug, 'aria-label': node.title});
             // 記事は「種」の形(縦長の楕円)で描く
             anchor.appendChild(createElement('ellipse', {
-                class: 'gh-strata-dot' + (node.kind ? ' is-' + node.kind : ''),
+                class: 'gh-strata-dot',
                 cx: options.axisX, cy: y, rx: options.nodeRadius, ry: options.nodeRadius * 1.3
             }));
             const title = createElement('text', {
@@ -333,7 +330,7 @@
      * 固定ペイン用のレイアウトを計算する。新しい記事を上(row 0)に並べ、行間は一定(rowHeight)、
      * 月が変わる位置に区切り(monthMarks)を置いて monthGap ぶん余白を空ける。
      *
-     * @param {Array<{slug: string, title: string, url: string, publishedAt: string, refs: string[], kind: string}>} posts
+     * @param {Array<{slug: string, title: string, url: string, publishedAt: string, refs: string[]}>} posts
      * @param {{rowHeight: number, monthGap: number, paddingTop: number, paddingBottom: number}} options
      * @returns {{nodes: object[], edges: object[], monthMarks: object[], minCol: number, maxCol: number, height: number}}
      *   nodes は col(列番号)、edges は fromCol / toCol(両端の列番号)を持つ
@@ -370,7 +367,7 @@
                 previousMonth = month;
             }
             y += row === 0 ? 0 : options.rowHeight;
-            nodes.push({slug: post.slug, title: post.title, url: post.url, publishedAt: post.publishedAt, kind: post.kind, row: row, y: y});
+            nodes.push({slug: post.slug, title: post.title, url: post.url, publishedAt: post.publishedAt, row: row, y: y});
             rowOf[post.slug] = row;
         });
 
@@ -384,7 +381,6 @@
                     rawEdges.push({
                         from: post.slug,
                         to: ref,
-                        kind: post.kind,
                         fromRow: Math.min(fromRow, toRow),
                         toRow: Math.max(fromRow, toRow)
                     });
@@ -634,7 +630,7 @@
             return rank(b.distance) - rank(a.distance);
         }).forEach(function (item) {
             edgeGroup.appendChild(createElement('path', {
-                class: 'gh-strata-pane-edge' + (item.edge.kind ? ' is-' + item.edge.kind : '') + emphasisClass(item.distance),
+                class: 'gh-strata-pane-edge' + emphasisClass(item.distance),
                 d: paneEdgePath(item.edge, nodeY, options),
                 'data-from': item.edge.from,
                 'data-to': item.edge.to
@@ -675,7 +671,7 @@
             }
             // ノードは「種」の形(縦長の楕円)で描く
             anchor.appendChild(createElement('ellipse', {
-                class: 'gh-strata-pane-dot' + (node.kind ? ' is-' + node.kind : ''),
+                class: 'gh-strata-pane-dot',
                 cx: x, cy: node.y, rx: options.nodeRadius, ry: options.nodeRadius * 1.3
             }));
             nodeGroup.appendChild(anchor);

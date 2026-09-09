@@ -2537,50 +2537,6 @@ figcaption a {
     margin-top: 32px;
 }
 
-.gh-strata-legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 20px;
-    margin: 0 0 20px;
-    padding: 0;
-    font-size: 1.3rem;
-    color: var(--color-secondary-text);
-    list-style: none;
-}
-
-/* 凡例は JS でグラフが描画されたときだけ意味を持つ */
-.gh-strata:not(.is-rendered) .gh-strata-legend {
-    display: none;
-}
-
-.gh-strata-legend li {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.gh-strata-legend-line {
-    display: inline-block;
-    width: 28px;
-    border-top: 2px solid var(--strata-root);
-}
-
-.gh-strata-legend-line.is-correction {
-    border-top: 3px solid var(--ghost-accent-color);
-}
-
-.gh-strata-legend-line.is-supplement {
-    border-top-style: dashed;
-}
-
-.gh-strata-legend-line.is-continuation {
-    border-top-width: 3px;
-}
-
-.gh-strata-legend-line.is-reversal {
-    border-top-style: dotted;
-}
-
 .gh-strata-list {
     margin: 0;
     padding: 0;
@@ -2694,24 +2650,6 @@ figcaption a {
     transition: opacity 0.15s ease;
 }
 
-.gh-strata-edge.is-correction {
-    stroke: var(--ghost-accent-color);
-    stroke-width: 2.5;
-}
-
-.gh-strata-edge.is-supplement {
-    stroke-dasharray: 6 4;
-}
-
-.gh-strata-edge.is-continuation {
-    stroke-width: 2.5;
-}
-
-.gh-strata-edge.is-reversal {
-    stroke-dasharray: 2 4;
-    stroke-linecap: round;
-}
-
 /* ノードにマウスを乗せたときは関係するエッジだけを強調する */
 .gh-strata-svg.is-highlighting .gh-strata-edge {
     opacity: 0.15;
@@ -2731,11 +2669,6 @@ figcaption a {
     stroke: var(--background-color);
     stroke-width: 2;
     transition: fill 0.15s ease;
-}
-
-.gh-strata-dot.is-correction {
-    fill: var(--ghost-accent-color);
-    stroke: var(--ghost-accent-color);
 }
 
 .gh-strata-node:hover .gh-strata-dot,
@@ -2874,19 +2807,6 @@ figcaption a {
     transition: stroke 0.15s ease;
 }
 
-.gh-strata-pane-edge.is-supplement {
-    stroke-dasharray: 6 4;
-}
-
-.gh-strata-pane-edge.is-continuation {
-    stroke-width: 2;
-}
-
-.gh-strata-pane-edge.is-reversal {
-    stroke-dasharray: 2 4;
-    stroke-linecap: round;
-}
-
 /* 現在の記事と直接つながる線(1 ホップ)は強調色、2 ホップは薄い強調色、無関係な線は暗くする */
 .gh-strata-pane-edge.is-level-1 {
     stroke: var(--ghost-accent-color);
@@ -2912,10 +2832,6 @@ figcaption a {
     stroke: transparent;
     stroke-width: 10;
     transition: fill 0.15s ease, rx 0.15s ease, ry 0.15s ease;
-}
-
-.gh-strata-pane-dot.is-correction {
-    fill: var(--ghost-accent-color);
 }
 
 /* 現在の記事は「芽吹いた種」(輪と芽をつける)。引用チェーン上の記事を強調し、無関係な記事は暗くする */
