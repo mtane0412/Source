@@ -2596,6 +2596,175 @@ figcaption a {
     color: var(--color-secondary-text);
 }
 
+/* Hyperstrata: 時系列 × 引用関係のグラフビュー(custom-strata.hbs)。
+   JS が有効なら .gh-strata-graph(SVG)を挿入し、元の一覧は hidden にする */
+.gh-strata {
+    margin-top: 32px;
+}
+
+.gh-strata-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    margin: 0 0 20px;
+    padding: 0;
+    font-size: 1.3rem;
+    color: var(--color-secondary-text);
+    list-style: none;
+}
+
+/* 凡例は JS でグラフが描画されたときだけ意味を持つ */
+.gh-strata:not(.is-rendered) .gh-strata-legend {
+    display: none;
+}
+
+.gh-strata-legend li {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.gh-strata-legend-line {
+    display: inline-block;
+    width: 28px;
+    border-top: 2px solid var(--color-dark-border);
+}
+
+.gh-strata-legend-line.is-correction {
+    border-top: 3px solid var(--ghost-accent-color);
+}
+
+.gh-strata-legend-line.is-supplement {
+    border-top-style: dashed;
+}
+
+.gh-strata-legend-line.is-continuation {
+    border-top-width: 3px;
+}
+
+.gh-strata-legend-line.is-reversal {
+    border-top-style: dotted;
+}
+
+.gh-strata-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.gh-strata-list li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.gh-strata-list a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.gh-strata-list a:hover {
+    text-decoration: underline;
+}
+
+.gh-strata-list time {
+    flex-shrink: 0;
+    font-size: 1.3rem;
+    color: var(--color-secondary-text);
+}
+
+/* 横幅が足りない画面では SVG を横スクロールさせる(viewBox 固定のため縮小せず可読性を保つ) */
+.gh-strata-graph {
+    overflow-x: auto;
+}
+
+.gh-strata-svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    font-size: 14px;
+}
+
+.gh-strata-axis {
+    stroke: var(--color-border);
+    stroke-width: 2;
+}
+
+.gh-strata-year {
+    fill: var(--color-secondary-text);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.gh-strata-edge {
+    fill: none;
+    stroke: var(--color-dark-border);
+    stroke-width: 1.5;
+    opacity: 0.6;
+    transition: opacity 0.15s ease;
+}
+
+.gh-strata-edge.is-correction {
+    stroke: var(--ghost-accent-color);
+    stroke-width: 2.5;
+}
+
+.gh-strata-edge.is-supplement {
+    stroke-dasharray: 6 4;
+}
+
+.gh-strata-edge.is-continuation {
+    stroke-width: 2.5;
+}
+
+.gh-strata-edge.is-reversal {
+    stroke-dasharray: 2 4;
+    stroke-linecap: round;
+}
+
+/* ノードにマウスを乗せたときは関係するエッジだけを強調する */
+.gh-strata-svg.is-highlighting .gh-strata-edge {
+    opacity: 0.15;
+}
+
+.gh-strata-svg.is-highlighting .gh-strata-edge.is-active {
+    opacity: 1;
+}
+
+.gh-strata-node {
+    cursor: pointer;
+}
+
+.gh-strata-dot {
+    fill: var(--color-white);
+    stroke: var(--color-dark-border);
+    stroke-width: 2;
+}
+
+.gh-strata-dot.is-correction {
+    fill: var(--ghost-accent-color);
+    stroke: var(--ghost-accent-color);
+}
+
+.gh-strata-node:hover .gh-strata-dot,
+.gh-strata-node:focus .gh-strata-dot {
+    fill: var(--ghost-accent-color);
+    stroke: var(--ghost-accent-color);
+}
+
+.gh-strata-title {
+    fill: var(--color-primary-text);
+}
+
+.gh-strata-node:hover .gh-strata-title,
+.gh-strata-node:focus .gh-strata-title {
+    text-decoration: underline;
+}
+
 /* 17. Comments
 /* ---------------------------------------------------------- */
 
