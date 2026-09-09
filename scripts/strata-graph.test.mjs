@@ -382,7 +382,8 @@ function タイムラインを読み込む() {
     vm.runInNewContext(スクリプト, {window});
     const api = window.HyperstrataGraph;
     return {
-        buildTimelineLayout: (rows, posts) => JSON.parse(JSON.stringify(api.buildTimelineLayout(rows, posts)))
+        buildTimelineLayout: (rows, posts) => JSON.parse(JSON.stringify(api.buildTimelineLayout(rows, posts))),
+        placeTimelineAxis: options => JSON.parse(JSON.stringify(api.placeTimelineAxis(options)))
     };
 }
 
@@ -445,6 +446,16 @@ test('buildTimelineLayout: graph.json に無い行(同期前の新しい記事)�
     assert.equal(layout.offPage.some(item => item.slug === 'unsynced'), false);
 });
 
+test('buildTimelineLayout: 枝分かれした列は幹の左(負の列)に置き、記事カードの文字に根が重ならないようにする', () => {
+    const {buildTimelineLayout} = タイムラインを読み込む();
+    // newest → oldest の幹が列 0 を占めるため、同じ oldest を引用する middle は分岐する
+    const layout = buildTimelineLayout(行, タイムライン記事);
+    const middle = layout.nodes.find(node => node.slug === 'middle');
+    assert.ok(middle.col < 0, `middle の列は負であるべきですが ${middle.col} でした`);
+    const edge = layout.edges.find(item => item.from === 'middle');
+    assert.equal(edge.fromCol, middle.col);
+});
+
 test('buildTimelineLayout: 行が無ければ空のレイアウトを返す', () => {
     const {buildTimelineLayout} = タイムラインを読み込む();
     assert.deepEqual(buildTimelineLayout([], タイムライン記事), {bands: [], nodes: [], edges: [], offPage: []});
@@ -479,4 +490,31 @@ test('selectNewTimelineRows: 次ページ内で同じ slug が重複した場合
 test('selectNewTimelineRows: 次ページが空なら空配列を返す', () => {
     const {selectNewTimelineRows} = 無限スクロールを読み込む();
     assert.deepEqual(selectNewTimelineRows(['newest'], []), []);
+});
+
+/* ------------------------------------------------------------------
+ * タイムラインの軸(列 0)の x 座標
+ * ------------------------------------------------------------------ */
+
+test('placeTimelineAxis: 列が 0 だけなら軸はガターの右端(laneRight)に置き、列幅はそのまま', () => {
+    const {placeTimelineAxis} = タイムラインを読み込む();
+    assert.deepEqual(placeTimelineAxis({minCol: 0, maxCol: 0, laneLeft: 84, laneRight: 140, laneWidth: 16}), {axisX: 140, laneWidth: 16});
+});
+
+test('placeTimelineAxis: 負の列(左の枝)があっても軸は動かない(次ページを継ぎ足しても種の位置が跳ねない)', () => {
+    const {placeTimelineAxis} = タイムラインを読み込む();
+    assert.deepEqual(placeTimelineAxis({minCol: -3, maxCol: 0, laneLeft: 84, laneRight: 140, laneWidth: 16}), {axisX: 140, laneWidth: 16});
+});
+
+test('placeTimelineAxis: 正の列(右の枝)がある場合は、右端の列が laneRight に収まるよう軸を左へずらす', () => {
+    const {placeTimelineAxis} = タイムラインを読み込む();
+    assert.deepEqual(placeTimelineAxis({minCol: 0, maxCol: 2, laneLeft: 84, laneRight: 140, laneWidth: 16}), {axisX: 108, laneWidth: 16});
+});
+
+test('placeTimelineAxis: 列が多くて laneLeft〜laneRight に収まらない場合は列幅を縮めて収める', () => {
+    const {placeTimelineAxis} = タイムラインを読み込む();
+    // 8 列分(-7..0)を 56px に収める → 列幅 8px
+    assert.deepEqual(placeTimelineAxis({minCol: -7, maxCol: 0, laneLeft: 84, laneRight: 140, laneWidth: 16}), {axisX: 140, laneWidth: 8});
+    // 正負にまたがる場合も同様に縮め、右端の列を laneRight に置く
+    assert.deepEqual(placeTimelineAxis({minCol: -6, maxCol: 1, laneLeft: 84, laneRight: 140, laneWidth: 16}), {axisX: 132, laneWidth: 8});
 });

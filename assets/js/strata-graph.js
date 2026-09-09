@@ -28,7 +28,7 @@
  * - エッジ: 引用関係(引用元 → 引用先)
  * - graph.json の取得や内容の検証に失敗した場合は console.error に出力し、グラフは描画しない
  *
- * レイアウト計算(buildLayout / buildPaneLayout / buildTimelineLayout / assignColumns / computeEmphasis / buildStrataBands / strataBoundaryPath)、
+ * レイアウト計算(buildLayout / buildPaneLayout / buildTimelineLayout / placeTimelineAxis / assignColumns / computeEmphasis / buildStrataBands / strataBoundaryPath)、
  * 無限スクロールで継ぎ足す行の選別(selectNewTimelineRows)と
  * graph.json の検証(parseGraph)は DOM に依存しない純粋関数として window.HyperstrataGraph に公開し、
  * scripts/strata-graph.test.mjs から検証する。
@@ -441,6 +441,8 @@
      * ここでは行の位置は動かさず、連続する同じ月の行を地層の帯(bands)にまとめ、graph.json の引用関係のうち
      * 表示中の行どうしのものをエッジ(edges)にし、表示中に無い記事への引用は行ごとの本数(offPage)として数える。
      * 列(col)は固定ペインと同じ assignColumns で決め、引用チェーンが 1 本の幹として同じ列を継ぐようにする。
+     * ただし assignColumns は分岐を +1(右)側から使うため、ここでは列の符号を反転して分岐を左(ガターの余白側)へ出す。
+     * 幹(列 0)の右は記事カードの文字なので、根が文字に重ならないようにするため。
      * graph.json に無い行(同期前の新しい記事)は引用の無い孤立した記事として扱う。
      *
      * @param {Array<{slug: string, month: string, top: number, bottom: number, y: number}>} rows 表示順(新しい順)の行
@@ -490,14 +492,34 @@
                 offPage.push({slug: row.slug, row: index, count: outside});
             }
         });
-        const columns = assignColumns(nodes, rawEdges);
+        // 分岐を左へ出すため列の符号を反転する(-0 を避けるため 0 はそのまま)
+        const cols = assignColumns(nodes, rawEdges).cols.map(function (col) {
+            return col === 0 ? 0 : -col;
+        });
         nodes.forEach(function (node, index) {
-            node.col = columns.cols[index];
+            node.col = cols[index];
         });
         const edges = rawEdges.map(function (edge) {
-            return Object.assign({}, edge, {fromCol: columns.cols[edge.fromRow], toCol: columns.cols[edge.toRow]});
+            return Object.assign({}, edge, {fromCol: cols[edge.fromRow], toCol: cols[edge.toRow]});
         });
         return {bands: bands, nodes: nodes, edges: edges, offPage: offPage};
+    }
+
+    /**
+     * タイムラインの軸(列 0)の x 座標と列幅を決める。
+     *
+     * 軸はガターの右端(laneRight、記事カードの文字のすぐ左)に固定し、次ページを継ぎ足して左の枝が増えても
+     * 種の位置が跳ねないようにする。正の列(右の枝)がある場合だけ、右端の列が laneRight に収まるよう軸を左へずらす。
+     * 列の総数が laneLeft(月ラベルの右端)〜laneRight に収まらない場合は列幅を縮めて収める。
+     *
+     * @param {{minCol: number, maxCol: number, laneLeft: number, laneRight: number, laneWidth: number}} options
+     * @returns {{axisX: number, laneWidth: number}}
+     */
+    function placeTimelineAxis(options) {
+        const span = options.maxCol - options.minCol;
+        const available = options.laneRight - options.laneLeft;
+        const laneWidth = span > 0 ? Math.min(options.laneWidth, available / span) : options.laneWidth;
+        return {axisX: options.laneRight - options.maxCol * laneWidth, laneWidth: laneWidth};
     }
 
     /**
@@ -1017,12 +1039,13 @@
         });
         svg.appendChild(edgeGroup);
 
-        // ページ外(表示中に無い古い記事)への根。使われている列の右隣を 1 本の束として下端までフェードさせ、本数をラベルで示す
+        // ページ外(表示中に無い古い記事)への根。使われている列の左隣(記事カードの文字と反対側)を 1 本の束として
+        // 下端までフェードさせ、本数をラベルで示す。この列は renderTimeline が placeTimelineAxis の minCol に含めて確保する
         if (layout.offPage.length > 0) {
-            const maxCol = layout.nodes.reduce(function (max, node) {
-                return Math.max(max, node.col);
+            const minCol = layout.nodes.reduce(function (min, node) {
+                return Math.min(min, node.col);
             }, 0);
-            const offX = columnX(maxCol + 1, laneOptions);
+            const offX = columnX(minCol - 1, laneOptions);
             const offGroup = createElement('g', {class: 'gh-strata-timeline-offpage'});
             layout.offPage.forEach(function (item) {
                 const node = layout.nodes[item.row];
@@ -1041,8 +1064,9 @@
             }, 0);
             const label = createElement('text', {
                 class: 'gh-strata-timeline-offpage-label',
-                x: offX + 10,
-                y: options.height - 6
+                x: offX - 10,
+                y: options.height - 6,
+                'text-anchor': 'end'
             });
             label.textContent = options.offPageLabel.replace('%', String(total));
             offGroup.appendChild(label);
@@ -1215,17 +1239,27 @@
         const compact = list.clientWidth < 600;
         const styles = getComputedStyle(list);
         const labelWidth = compact ? 0 : parseFloat(styles.getPropertyValue('--strata-timeline-label-width'));
-        const laneWidth = compact ? 12 : 16;
-        // 列 0 を月ラベル列の右に置き、列が負の方向(左)へ伸びた場合もラベルに重ならないようにずらす
-        const axisX = labelWidth + (compact ? 20 : 36) - layout.nodes.reduce(function (min, node) {
-            return Math.min(min, node.col);
-        }, 0) * laneWidth;
+        const gutter = parseFloat(styles.getPropertyValue('--strata-timeline-gutter'));
+        if (Number.isNaN(labelWidth) || Number.isNaN(gutter)) {
+            throw new Error('--strata-timeline-label-width / --strata-timeline-gutter を CSS から読み取れません');
+        }
+        const cols = layout.nodes.map(function (node) {
+            return node.col;
+        });
+        // 軸は記事カードの文字のすぐ左に固定し、枝は月ラベルとの間(左)へ広げる。ページ外への根の束はさらに左隣の列を使う
+        const axis = placeTimelineAxis({
+            minCol: Math.min.apply(null, cols.concat([0])) - (layout.offPage.length > 0 ? 1 : 0),
+            maxCol: Math.max.apply(null, cols.concat([0])),
+            laneLeft: labelWidth + (compact ? 8 : 12),
+            laneRight: gutter - (compact ? 20 : 36),
+            laneWidth: compact ? 12 : 16
+        });
         const svg = renderTimelineSvg(layout, {
             width: list.clientWidth,
             height: list.clientHeight,
             labelWidth: labelWidth,
-            axisX: axisX,
-            laneWidth: laneWidth,
+            axisX: axis.axisX,
+            laneWidth: axis.laneWidth,
             bend: 40,
             nodeRadius: compact ? 4 : 5,
             maxDepthShade: 6,
@@ -1280,6 +1314,7 @@
         buildPaneLayout: buildPaneLayout,
         buildTimelineLayout: buildTimelineLayout,
         selectNewTimelineRows: selectNewTimelineRows,
+        placeTimelineAxis: placeTimelineAxis,
         assignColumns: assignColumns,
         computeEmphasis: computeEmphasis,
         buildStrataBands: buildStrataBands,
