@@ -9,7 +9,8 @@
  * - 引用タグの `description` には引用先 slug を保存する(テーマが References を引くために使う)
  * - 引用タグ以外の既存タグは維持する
  * - 差分がある記事だけ更新する(冪等)
- * - `--dry-run` を付けると更新内容の表示のみ行う
+ * - どの記事にも付いていない引用タグ(引用先 slug の変更やリンク削除で不要になったもの)は削除する
+ * - `--dry-run` を付けると更新・削除内容の表示のみ行う
  *
  * 必要な環境変数(既存の deploy-theme.yml と同じ Secrets):
  *   GHOST_ADMIN_API_URL  例: https://example.com
@@ -126,11 +127,34 @@ export function planTagUpdate({existingTags, referencedSlugs}) {
  *
  * タグ名(`#ref-`)ではなく slug(`hash-ref-`)でフィルタする。URL クエリに `#` を含めると
  * フラグメントとして切り捨てられフィルタが壊れるため。フィルタ文字列は URL エンコードする。
+ * 不要タグの判定に使うため、各タグに付いている記事数(`count.posts`)も含めて取得する。
  *
- * @returns {string} `/tags/?limit=all&filter=...`
+ * @returns {string} `/tags/?limit=all&include=count.posts&filter=...`
  */
 export function buildRefTagsQuery() {
-    return `/tags/?limit=all&filter=${encodeURIComponent(`slug:~^'${REF_TAG_SLUG_PREFIX}'`)}`;
+    return `/tags/?limit=all&include=count.posts&filter=${encodeURIComponent(`slug:~^'${REF_TAG_SLUG_PREFIX}'`)}`;
+}
+
+/**
+ * どの記事にも付いていない引用タグ(削除対象)を選び出す。
+ *
+ * 引用タグ以外のタグは記事数に関わらず対象外とする。引用タグに `count.posts` が無い場合は
+ * 取得クエリの不備とみなし、誤削除を避けるため例外を投げる。
+ *
+ * @param {Array<{id: string, name: string, count?: {posts?: number}}>} tags Admin API から取得したタグ
+ * @returns {Array<{id: string, name: string}>} 削除対象の引用タグ
+ */
+export function selectOrphanRefTags(tags) {
+    return tags.filter((tag) => {
+        if (!tag.name.startsWith(REF_TAG_PREFIX)) {
+            return false;
+        }
+        const postCount = tag.count?.posts;
+        if (typeof postCount !== 'number') {
+            throw new Error(`引用タグ ${tag.name} に count.posts が含まれていません(include=count.posts を確認してください)`);
+        }
+        return postCount === 0;
+    });
 }
 
 /**
@@ -154,6 +178,10 @@ function createAdminClient({adminUrl, apiKey}) {
         if (!response.ok) {
             throw new Error(`Ghost Admin API ${method} ${path} が失敗しました: ${response.status} ${await response.text()}`);
         }
+        // DELETE は 204 No Content を返すため、本文が無い場合は null を返す
+        if (response.status === 204) {
+            return null;
+        }
         return response.json();
     }
 
@@ -162,7 +190,8 @@ function createAdminClient({adminUrl, apiKey}) {
         getPublishedPosts: async () => (await request('GET', '/posts/?limit=all&filter=status:published&formats=html&include=tags')).posts,
         updatePostTags: (post, tags) => request('PUT', `/posts/${post.id}/`, {posts: [{tags, updated_at: post.updated_at}]}),
         getRefTags: async () => (await request('GET', buildRefTagsQuery())).tags,
-        updateTagDescription: (tag, description) => request('PUT', `/tags/${tag.id}/`, {tags: [{description}]})
+        updateTagDescription: (tag, description) => request('PUT', `/tags/${tag.id}/`, {tags: [{description}]}),
+        deleteTag: tag => request('DELETE', `/tags/${tag.id}/`)
     };
 }
 
@@ -170,8 +199,7 @@ function createAdminClient({adminUrl, apiKey}) {
  * 引用タグの description に引用先 slug が入っていない場合に補完する。
  * (記事更新時に新規作成されたタグへ description が反映されなかった場合の保険)
  */
-async function ensureRefTagDescriptions(client, dryRun) {
-    const refTags = await client.getRefTags();
+async function ensureRefTagDescriptions(client, refTags, dryRun) {
     for (const tag of refTags) {
         const slug = tag.name.slice(REF_TAG_PREFIX.length);
         if (tag.description === slug) {
@@ -182,6 +210,23 @@ async function ensureRefTagDescriptions(client, dryRun) {
             await client.updateTagDescription(tag, slug);
         }
     }
+}
+
+/**
+ * どの記事にも付いていない引用タグを削除する。
+ * (引用先 slug の変更や本文からのリンク削除で不要になったタグが管理画面に残り続けるのを防ぐ)
+ *
+ * @returns {Promise<number>} 削除した(dry-run 時は削除予定の)タグ数
+ */
+async function pruneOrphanRefTags(client, refTags, dryRun) {
+    const orphanTags = selectOrphanRefTags(refTags);
+    for (const tag of orphanTags) {
+        console.log(`[tag] ${tag.name}: どの記事にも付いていないため削除`);
+        if (!dryRun) {
+            await client.deleteTag(tag);
+        }
+    }
+    return orphanTags.length;
 }
 
 async function main() {
@@ -212,8 +257,11 @@ async function main() {
         updatedCount += 1;
     }
 
-    await ensureRefTagDescriptions(client, dryRun);
-    console.log(`完了: ${updatedCount} 件の記事を更新${dryRun ? '予定' : ''}`);
+    // 記事更新後の状態でタグ一覧を取得し、description の補完と不要タグの削除に使う
+    const refTags = await client.getRefTags();
+    await ensureRefTagDescriptions(client, refTags, dryRun);
+    const prunedCount = await pruneOrphanRefTags(client, refTags, dryRun);
+    console.log(`完了: ${updatedCount} 件の記事を更新、${prunedCount} 件の引用タグを削除${dryRun ? '予定' : ''}`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
