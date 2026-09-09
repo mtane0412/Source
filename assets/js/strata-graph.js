@@ -11,7 +11,9 @@
  * 3. partials/strata-timeline.hbs([data-strata-timeline]): トップページの地層タイムライン。記事カードはテンプレートが
  *    HTML で出力し、JS は各行の位置を計測して背後に SVG(月ごとの地層の帯、左のガターの種と根)を重ねる。
  *    表示中に無い古い記事への引用はガターの端でフェードする 1 本の束にまとめ、本数をラベルで示す。
- *    見た目(帯・種・根)は固定ペインと同じ CSS クラスを使う
+ *    見た目(帯・種・根)は固定ペインと同じ CSS クラスを使う。
+ *    末尾の [data-strata-more] が画面に入ると、ghost_head が出力する link[rel=next] の URL(/page/N/)を fetch して
+ *    次ページの行を継ぎ足し、SVG を描き直す(無限スクロール)。次ページが無くなったら [data-strata-more] を外す
  * 2. partials/strata-pane.hbs([data-strata-pane]): 記事ページ左側の固定ペイン。新しい記事が上、
  *    月ごとの区切り線付き。記事ごとに列(col)を持ち、引用チェーンが同じ列を継いで 1 本の幹になり、
  *    複数の引用で枝分かれ、複数からの被引用で合流する git のブランチ図のように描く(本家 Hyperstrata と同じ方式)。
@@ -26,7 +28,8 @@
  * - エッジ: 引用関係(引用元 → 引用先)
  * - graph.json の取得や内容の検証に失敗した場合は console.error に出力し、グラフは描画しない
  *
- * レイアウト計算(buildLayout / buildPaneLayout / buildTimelineLayout / assignColumns / computeEmphasis / buildStrataBands / strataBoundaryPath)と
+ * レイアウト計算(buildLayout / buildPaneLayout / buildTimelineLayout / assignColumns / computeEmphasis / buildStrataBands / strataBoundaryPath)、
+ * 無限スクロールで継ぎ足す行の選別(selectNewTimelineRows)と
  * graph.json の検証(parseGraph)は DOM に依存しない純粋関数として window.HyperstrataGraph に公開し、
  * scripts/strata-graph.test.mjs から検証する。
  */
@@ -495,6 +498,30 @@
             return Object.assign({}, edge, {fromCol: columns.cols[edge.fromRow], toCol: columns.cols[edge.toRow]});
         });
         return {bands: bands, nodes: nodes, edges: edges, offPage: offPage};
+    }
+
+    /**
+     * 無限スクロールで取得した次ページの行のうち、タイムラインに継ぎ足す行の添字を返す。
+     *
+     * 取得の合間に記事が公開されるとページ境界がずれ、表示済みの記事が次ページの先頭に再び現れる。
+     * 同じ slug の行が 2 つあると buildTimelineLayout の slug → 行の対応が壊れるため、表示済みの slug と
+     * 次ページ内で既に採用した slug は除外する。
+     *
+     * @param {string[]} existingSlugs 表示済みの行の slug
+     * @param {string[]} incomingSlugs 次ページの行の slug(表示順)
+     * @returns {number[]} 継ぎ足す行の添字(incomingSlugs 上の位置、昇順)
+     */
+    function selectNewTimelineRows(existingSlugs, incomingSlugs) {
+        const seen = new Set(existingSlugs);
+        const indexes = [];
+        incomingSlugs.forEach(function (slug, index) {
+            if (seen.has(slug)) {
+                return;
+            }
+            seen.add(slug);
+            indexes.push(index);
+        });
+        return indexes;
     }
 
     /**
@@ -1035,14 +1062,25 @@
         return svg;
     }
 
-    /** トップページの地層タイムラインを初期化する。画面幅が変わると行の位置も変わるため、リサイズのたびに描き直す */
+    /**
+     * トップページの地層タイムラインを初期化する。
+     * 画面幅が変わると行の位置も変わるため、リサイズのたびに描き直す。無限スクロールで行が増えたときも描き直す。
+     * 無限スクロールは graph.json の取得とは独立に動かし、graph.json が読めなくても記事一覧の継ぎ足しは続ける
+     */
     function initTimeline() {
         const container = document.querySelector('[data-strata-timeline]');
         if (!container) {
             return;
         }
-        loadGraph(container.dataset.strataGraphUrl).then(function (posts) {
-            renderTimeline(container, posts);
+        let posts = null;
+        const redraw = function () {
+            if (posts !== null) {
+                renderTimeline(container, posts);
+            }
+        };
+        loadGraph(container.dataset.strataGraphUrl).then(function (loaded) {
+            posts = loaded;
+            redraw();
             let pending = null;
             window.addEventListener('resize', function () {
                 if (pending !== null) {
@@ -1050,11 +1088,115 @@
                 }
                 pending = requestAnimationFrame(function () {
                     pending = null;
-                    renderTimeline(container, posts);
+                    redraw();
                 });
             });
         }).catch(function (error) {
             console.error('[Hyperstrata] 地層タイムラインを描画できません:', error);
+        });
+        initTimelinePager(container, redraw);
+    }
+
+    /** [data-strata-more] が画面下端からこの距離(px)に近づいたら次ページを読み始める */
+    const PAGER_MARGIN = 400;
+
+    /**
+     * タイムラインの無限スクロールを初期化する。
+     *
+     * 末尾の [data-strata-more](JavaScript 無効時は次ページへのリンク)が画面に近づいたら次ページを継ぎ足す。
+     * 継ぎ足してもなお [data-strata-more] が画面内に残る場合(行が少ない・画面が高い)は続けて次ページを読む。
+     * 次ページが無くなる、または取得に失敗したら監視をやめ、[data-strata-more] を外す
+     * (失敗時にリンクを残しても同じ URL で失敗するだけのため。原因は console.error に出す)。
+     *
+     * @param {HTMLElement} container [data-strata-timeline]
+     * @param {() => void} onAppend 行を継ぎ足した後に SVG を描き直すコールバック
+     */
+    function initTimelinePager(container, onAppend) {
+        const sentinel = container.querySelector('[data-strata-more]');
+        if (!sentinel) {
+            return;
+        }
+        if (!document.querySelector('link[rel=next]')) {
+            sentinel.remove();
+            return;
+        }
+        const list = container.querySelector('[data-strata-rows]');
+        const isNear = function () {
+            return sentinel.getBoundingClientRect().top <= window.innerHeight + PAGER_MARGIN;
+        };
+        let loading = false;
+        const finish = function () {
+            observer.disconnect();
+            sentinel.remove();
+        };
+        const observer = new IntersectionObserver(function (entries) {
+            if (loading || !entries.some(function (entry) {
+                return entry.isIntersecting;
+            })) {
+                return;
+            }
+            loading = true;
+            const loadWhileNear = function () {
+                if (!isNear() || !document.querySelector('link[rel=next]')) {
+                    return Promise.resolve();
+                }
+                return loadNextTimelinePage(list).then(function () {
+                    onAppend();
+                    return loadWhileNear();
+                });
+            };
+            loadWhileNear().then(function () {
+                if (!document.querySelector('link[rel=next]')) {
+                    finish();
+                }
+            }).catch(function (error) {
+                console.error('[Hyperstrata] 次のページを読み込めません:', error);
+                finish();
+            }).then(function () {
+                loading = false;
+            });
+        }, {rootMargin: PAGER_MARGIN + 'px 0px'});
+        observer.observe(sentinel);
+    }
+
+    /**
+     * link[rel=next] の URL を fetch し、次ページのタイムラインの行を行リストの末尾に継ぎ足す。
+     * link[rel=next] は取得したページの link[rel=next] に付け替え、次ページが無ければ外す。
+     *
+     * @param {HTMLElement} list [data-strata-rows]
+     * @returns {Promise<void>}
+     */
+    function loadNextTimelinePage(list) {
+        const link = document.querySelector('link[rel=next]');
+        return fetch(link.href).then(function (response) {
+            if (!response.ok) {
+                throw new Error('次のページの取得に失敗しました: ' + response.status + ' ' + link.href);
+            }
+            return response.text();
+        }).then(function (html) {
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            const incoming = Array.from(doc.querySelectorAll('[data-strata-rows] > [data-strata-row]'));
+            if (incoming.length === 0) {
+                throw new Error('次のページにタイムラインの行がありません: ' + link.href);
+            }
+            const existingSlugs = Array.from(list.querySelectorAll('[data-strata-row]')).map(function (row) {
+                return row.dataset.slug;
+            });
+            const incomingSlugs = incoming.map(function (row) {
+                return row.dataset.slug;
+            });
+            const fragment = document.createDocumentFragment();
+            selectNewTimelineRows(existingSlugs, incomingSlugs).forEach(function (index) {
+                fragment.appendChild(document.importNode(incoming[index], true));
+            });
+            list.appendChild(fragment);
+
+            const nextLink = doc.querySelector('link[rel=next]');
+            if (nextLink && nextLink.href) {
+                link.href = nextLink.href;
+            } else {
+                link.remove();
+            }
         });
     }
 
@@ -1137,6 +1279,7 @@
         buildLayout: buildLayout,
         buildPaneLayout: buildPaneLayout,
         buildTimelineLayout: buildTimelineLayout,
+        selectNewTimelineRows: selectNewTimelineRows,
         assignColumns: assignColumns,
         computeEmphasis: computeEmphasis,
         buildStrataBands: buildStrataBands,

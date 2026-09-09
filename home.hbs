@@ -2,7 +2,8 @@
 {{!-- The tag above means: insert everything in this file into the body of the default.hbs template --}}
 
 {{!-- Hyperstrata: トップページは記事一覧そのものを地層タイムライン(partials/strata-timeline.hbs)として描く。
-     Ghost はトップページに home.hbs を使う(index.hbs はページ送り /page/N/ 用)ため、ここに置く --}}
+     Ghost はトップページに home.hbs、ページ送り /page/N/ に index.hbs を使う。どちらも同じ partial を置き、
+     strata-graph.js が /page/N/ を fetch して行を継ぎ足す(無限スクロール)ため見た目が途中で変わらない --}}
 <main class="gh-main">
     {{> "strata-timeline"}}
 </main>
