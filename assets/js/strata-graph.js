@@ -7,7 +7,8 @@
  * 1. custom-strata.hbs([data-strata]): 固定ページ用。縦軸を時間(公開日)としたアーク図(新しい記事が上)。
  *    年ごとの帯を地層として塗り分け、引用の線は古い層へ伸びる根として左に膨らむ弧で描く
  * 2. partials/strata-pane.hbs([data-strata-pane]): 記事ページ・トップページ左側の固定ペイン。新しい記事が上、
- *    月ごとの区切り線付き。エッジは git のブランチ図のようにレーンを分けて描き、
+ *    月ごとの区切り線付き。記事ごとに列(col)を持ち、引用チェーンが同じ列を継いで 1 本の幹になり、
+ *    複数の引用で枝分かれ、複数からの被引用で合流する git のブランチ図のように描く(本家 Hyperstrata と同じ方式)。
  *    現在の記事(data-current-slug)とその引用チェーン(2 ホップ)を強調し、無関係なものは暗くする。
  *    引用の無い孤立した記事でも、現在記事であれば強調する。
  *    トップページでは data-current-slug が空になり、中立モード(強調も暗転もなし)で描く。
@@ -19,7 +20,7 @@
  * - エッジ: 引用関係(引用元 → 引用先)。種別タグ(#correction 等)があれば線の見た目を変える
  * - JavaScript が無効な環境では元の記事一覧がそのまま表示される(有効時も支援技術向けに残す)
  *
- * レイアウト計算(buildLayout / buildPaneLayout / assignLanes / computeEmphasis / buildStrataBands / strataBoundaryPath)は DOM に依存しない
+ * レイアウト計算(buildLayout / buildPaneLayout / assignColumns / computeEmphasis / buildStrataBands / strataBoundaryPath)は DOM に依存しない
  * 純粋関数として window.HyperstrataGraph に公開し、scripts/strata-graph.test.mjs から検証する。
  */
 (function () {
@@ -243,46 +244,82 @@
     }
 
     /**
-     * 行範囲が重なるエッジが同じレーンを使わないように、各エッジにレーン番号を割り当てる。
+     * 記事ごとに列(col)を割り当てる(git のブランチ図方式)。列は 0 を中心とした符号付き整数で、
+     * 必要になった順に 0, +1, -1, +2, -2, … と外側へ広げる。
      *
-     * 隣接する行(toRow - fromRow === 1)を結ぶエッジはノード列上の直線で描けるためレーン 0 とする。
-     * それ以外は区間グラフの貪欲彩色で、レーン 1 以上のうち空いている最小の番号を使う。
-     * 端の行だけを共有するエッジ(例: 0→2 と 2→4)は縦線が重ならないため同じレーンを再利用する。
+     * 新しい記事(row 0)から順に処理し、次の規則で決める。
+     * - 列が未定の記事(まだ誰にも引用されていない起点・孤立記事)は、その行で空いている 0 に最も近い列に置く
+     * - 記事が引用する相手を近い(新しい)順に見て、列が未定なら引用元の列を継がせる(幹が続く)。
+     *   途中の行がすでに別の幹に使われていれば、引用元の列に最も近い空き列に置く(枝分かれ)
+     * - 引用先がすでに列を持っていれば何もしない(その幹へ合流する線になる)
+     * 幹の区間(引用元の次の行から引用先の行まで)は列の占有として記録し、他の記事や幹が重ならないようにする。
      *
-     * @param {Array<{fromRow: number, toRow: number}>} edges fromRow < toRow を満たすエッジ
-     * @returns {object[]} 入力と同じ順序で lane を付与した新しい配列(入力は変更しない)
+     * @param {Array<{slug: string, row: number}>} nodes 行順(新しい順)のノード
+     * @param {Array<{fromRow: number, toRow: number}>} edges fromRow < toRow のエッジ
+     * @returns {{cols: number[], minCol: number, maxCol: number}} cols はノードと同じ順の列番号。ノードが無ければ 0..0
      */
-    function assignLanes(edges) {
-        const indexed = edges.map(function (edge, index) {
-            return {edge: edge, index: index};
+    function assignColumns(nodes, edges) {
+        const indexOfRow = {};
+        nodes.forEach(function (node, index) {
+            indexOfRow[node.row] = index;
         });
-        // 長いエッジを先に置いたほうが外側のレーンにまとまり、見た目が git グラフに近づく
-        const order = indexed.filter(function (item) {
-            return item.edge.toRow - item.edge.fromRow > 1;
-        }).sort(function (a, b) {
-            return a.edge.fromRow - b.edge.fromRow || (b.edge.toRow - b.edge.fromRow) - (a.edge.toRow - a.edge.fromRow);
+        const cols = nodes.map(function () {
+            return null;
         });
-        /** レーン番号 → そのレーンに置かれたエッジの行範囲 */
-        const laneRanges = [];
-        const lanes = new Array(edges.length).fill(0);
-        order.forEach(function (item) {
-            let lane = 0;
-            while (true) {
-                lane += 1;
-                const ranges = laneRanges[lane] || [];
-                const overlaps = ranges.some(function (range) {
-                    return item.edge.fromRow < range.toRow && range.fromRow < item.edge.toRow;
-                });
-                if (!overlaps) {
-                    laneRanges[lane] = ranges.concat([{fromRow: item.edge.fromRow, toRow: item.edge.toRow}]);
-                    break;
+        /** 列番号 → 占有している行区間(両端を含む)の配列 */
+        const reserved = {};
+        const isFree = function (col, fromRow, toRow) {
+            return (reserved[col] || []).every(function (range) {
+                return toRow < range.fromRow || range.toRow < fromRow;
+            });
+        };
+        const reserve = function (col, fromRow, toRow) {
+            (reserved[col] = reserved[col] || []).push({fromRow: fromRow, toRow: toRow});
+        };
+        /** center から外側へ向かって、行区間が空いている最初の列を返す */
+        const nearestFree = function (center, fromRow, toRow) {
+            for (let offset = 0; ; offset += 1) {
+                const candidates = offset === 0 ? [center] : [center + offset, center - offset];
+                for (let i = 0; i < candidates.length; i += 1) {
+                    if (isFree(candidates[i], fromRow, toRow)) {
+                        return candidates[i];
+                    }
                 }
             }
-            lanes[item.index] = lane;
+        };
+        const outgoing = nodes.map(function () {
+            return [];
         });
-        return edges.map(function (edge, index) {
-            return Object.assign({}, edge, {lane: lanes[index]});
+        edges.forEach(function (edge) {
+            outgoing[indexOfRow[edge.fromRow]].push(edge);
         });
+
+        nodes.forEach(function (node, index) {
+            if (cols[index] === null) {
+                cols[index] = nearestFree(0, node.row, node.row);
+                reserve(cols[index], node.row, node.row);
+            }
+            const col = cols[index];
+            outgoing[index].slice().sort(function (a, b) {
+                return a.toRow - b.toRow;
+            }).forEach(function (edge) {
+                const targetIndex = indexOfRow[edge.toRow];
+                if (cols[targetIndex] !== null) {
+                    return;
+                }
+                const targetCol = nearestFree(col, node.row + 1, edge.toRow);
+                cols[targetIndex] = targetCol;
+                reserve(targetCol, node.row + 1, edge.toRow);
+            });
+        });
+
+        const minCol = cols.reduce(function (min, col) {
+            return Math.min(min, col);
+        }, 0);
+        const maxCol = cols.reduce(function (max, col) {
+            return Math.max(max, col);
+        }, 0);
+        return {cols: cols, minCol: minCol, maxCol: maxCol};
     }
 
     /** 公開日(ローカル時刻)から月ラベル(YYYY-MM)を作る */
@@ -298,7 +335,8 @@
      *
      * @param {Array<{slug: string, title: string, url: string, publishedAt: string, refs: string[], kind: string}>} posts
      * @param {{rowHeight: number, monthGap: number, paddingTop: number, paddingBottom: number}} options
-     * @returns {{nodes: object[], edges: object[], monthMarks: object[], laneCount: number, height: number}}
+     * @returns {{nodes: object[], edges: object[], monthMarks: object[], minCol: number, maxCol: number, height: number}}
+     *   nodes は col(列番号)、edges は fromCol / toCol(両端の列番号)を持つ
      */
     function buildPaneLayout(posts, options) {
         const sorted = posts
@@ -314,7 +352,7 @@
             });
 
         if (sorted.length === 0) {
-            return {nodes: [], edges: [], monthMarks: [], laneCount: 0, height: 0};
+            return {nodes: [], edges: [], monthMarks: [], minCol: 0, maxCol: 0, height: 0};
         }
 
         const nodes = [];
@@ -353,12 +391,15 @@
                 }
             });
         });
-        const edges = assignLanes(rawEdges);
-        const laneCount = edges.reduce(function (max, edge) {
-            return Math.max(max, edge.lane);
-        }, 0);
+        const columns = assignColumns(nodes, rawEdges);
+        nodes.forEach(function (node, index) {
+            node.col = columns.cols[index];
+        });
+        const edges = rawEdges.map(function (edge) {
+            return Object.assign({}, edge, {fromCol: columns.cols[edge.fromRow], toCol: columns.cols[edge.toRow]});
+        });
 
-        return {nodes: nodes, edges: edges, monthMarks: monthMarks, laneCount: laneCount, height: y + options.paddingBottom};
+        return {nodes: nodes, edges: edges, monthMarks: monthMarks, minCol: columns.minCol, maxCol: columns.maxCol, height: y + options.paddingBottom};
     }
 
     /**
@@ -426,27 +467,30 @@
         return {neutral: false, nodes: distance, edges: edgeDistances};
     }
 
+    /** 列番号を SVG の x 座標に変換する(列 0 が axisX) */
+    function columnX(col, options) {
+        return options.axisX + col * options.laneWidth;
+    }
+
     /**
-     * ペイン用エッジのパスを作る。引用元ノードからレーンへ曲線で出て、レーン上を縦に下り、
-     * 引用先ノードへ曲線で戻る(git のブランチ図の見た目)。レーン 0 は直線。
+     * ペイン用エッジのパスを作る。両端が同じ列なら幹として直線で結ぶ。列が違う場合は、上のノードから
+     * 1 行ぶんの S 字で相手の列へ移り、そのまま縦に下って下のノードへ届く(git のブランチ図の枝分かれ・合流の見た目)。
+     * ノード座標は nodeY(slug → y)から引き、fromRow < toRow に揃えてあるため fromCol が上、toCol が下になる。
      */
     function paneEdgePath(edge, nodeY, options) {
-        const x0 = options.axisX;
-        const fromY = nodeY[edge.from];
-        const toY = nodeY[edge.to];
-        const top = Math.min(fromY, toY);
-        const bottom = Math.max(fromY, toY);
-        if (edge.lane === 0) {
-            return 'M ' + x0 + ' ' + top + ' L ' + x0 + ' ' + bottom;
+        const xTop = columnX(edge.fromCol, options);
+        const xBottom = columnX(edge.toCol, options);
+        const top = Math.min(nodeY[edge.from], nodeY[edge.to]);
+        const bottom = Math.max(nodeY[edge.from], nodeY[edge.to]);
+        if (xTop === xBottom) {
+            return 'M ' + xTop + ' ' + top + ' L ' + xTop + ' ' + bottom;
         }
-        const x = x0 + edge.lane * options.laneWidth;
         const bend = options.rowHeight;
-        // 制御点を縦方向の中間に置き、行き過ぎのない滑らかな S 字でレーンへ出入りする
+        // 制御点を縦方向の中間に置き、行き過ぎのない滑らかな S 字で相手の列へ移る
         const half = bend / 2;
-        return 'M ' + x0 + ' ' + top +
-            ' C ' + x0 + ' ' + (top + half) + ' ' + x + ' ' + (top + half) + ' ' + x + ' ' + (top + bend) +
-            ' L ' + x + ' ' + (bottom - bend) +
-            ' C ' + x + ' ' + (bottom - half) + ' ' + x0 + ' ' + (bottom - half) + ' ' + x0 + ' ' + bottom;
+        return 'M ' + xTop + ' ' + top +
+            ' C ' + xTop + ' ' + (top + half) + ' ' + xBottom + ' ' + (top + half) + ' ' + xBottom + ' ' + (top + bend) +
+            ' L ' + xBottom + ' ' + bottom;
     }
 
     /**
@@ -532,7 +576,7 @@
      * @param {ReturnType<typeof buildPaneLayout>} layout
      * @param {ReturnType<typeof computeEmphasis>} emphasis
      * @param {{axisX: number, laneWidth: number, rowHeight: number, width: number, nodeRadius: number, maxDepthShade: number, bleed: number, label: string, dateLocale: string}} options
-     *   maxDepthShade は地層の色の濃さの段階数の上限(CSS の data-depth と一致させる)、bleed は地層をペイン端まで届かせるための左右のはみ出し幅(px)
+     *   axisX は列 0 の x 座標、laneWidth は列の間隔(px)。maxDepthShade は地層の色の濃さの段階数の上限(CSS の data-depth と一致させる)、bleed は地層をペイン端まで届かせるための左右のはみ出し幅(px)
      */
     function renderPaneSvg(layout, emphasis, options) {
         const svg = createElement('svg', {
@@ -617,21 +661,22 @@
             anchor.setAttribute('aria-label', node.title + ' (' + dateText + ')');
             anchor.setAttribute('data-title', node.title);
             anchor.setAttribute('data-date', dateText);
+            const x = columnX(node.col, options);
             if (distance === 0) {
                 // 現在の記事は「芽吹いた種」として、輪と芽(茎と双葉)をつける
                 anchor.appendChild(createElement('circle', {
                     class: 'gh-strata-pane-ring',
-                    cx: options.axisX, cy: node.y, r: options.nodeRadius + 4
+                    cx: x, cy: node.y, r: options.nodeRadius + 4
                 }));
                 anchor.appendChild(createElement('path', {
                     class: 'gh-strata-pane-sprout',
-                    d: sproutPath(options.axisX, node.y - options.nodeRadius - 4, options.nodeRadius * 2.5)
+                    d: sproutPath(x, node.y - options.nodeRadius - 4, options.nodeRadius * 2.5)
                 }));
             }
             // ノードは「種」の形(縦長の楕円)で描く
             anchor.appendChild(createElement('ellipse', {
                 class: 'gh-strata-pane-dot' + (node.kind ? ' is-' + node.kind : ''),
-                cx: options.axisX, cy: node.y, rx: options.nodeRadius, ry: options.nodeRadius * 1.3
+                cx: x, cy: node.y, rx: options.nodeRadius, ry: options.nodeRadius * 1.3
             }));
             nodeGroup.appendChild(anchor);
         });
@@ -714,11 +759,14 @@
         const rowHeight = 26;
         const layout = buildPaneLayout(posts, {rowHeight: rowHeight, monthGap: 30, paddingTop: 24, paddingBottom: 48});
         const emphasis = computeEmphasis(layout.nodes, layout.edges, pane.dataset.currentSlug || '', 2);
+        const laneWidth = 12;
+        const padding = 24;
+        // 列 0 を中心に左右へ広がるため、最も左の列が padding の位置に来るように列 0 の x を決める
         const svg = renderPaneSvg(layout, emphasis, {
-            axisX: 24,
-            laneWidth: 12,
+            axisX: padding - layout.minCol * laneWidth,
+            laneWidth: laneWidth,
             rowHeight: rowHeight,
-            width: 24 + (layout.laneCount + 1) * 12 + 72,
+            width: padding + (layout.maxCol - layout.minCol + 1) * laneWidth + 72,
             nodeRadius: 4,
             maxDepthShade: 6,
             bleed: 400,
@@ -774,7 +822,7 @@
     window.HyperstrataGraph = {
         buildLayout: buildLayout,
         buildPaneLayout: buildPaneLayout,
-        assignLanes: assignLanes,
+        assignColumns: assignColumns,
         computeEmphasis: computeEmphasis,
         buildStrataBands: buildStrataBands,
         strataBoundaryPath: strataBoundaryPath

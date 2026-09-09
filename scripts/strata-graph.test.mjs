@@ -115,7 +115,7 @@ function ペインを読み込む() {
     const 正規化 = value => JSON.parse(JSON.stringify(value));
     return {
         buildPaneLayout: (posts, options) => 正規化(api.buildPaneLayout(posts, options)),
-        assignLanes: edges => 正規化(api.assignLanes(edges)),
+        assignColumns: (nodes, edges) => 正規化(api.assignColumns(nodes, edges)),
         computeEmphasis: (nodes, edges, slug, hops) => 正規化(api.computeEmphasis(nodes, edges, slug, hops)),
         buildStrataBands: (marks, height) => 正規化(api.buildStrataBands(marks, height)),
         strataBoundaryPath: (y, width, options) => api.strataBoundaryPath(y, width, options)
@@ -155,7 +155,7 @@ test('buildPaneLayout: 月が変わるごとに YYYY-MM の区切りを置き、
     assert.equal(layout.height, layout.nodes[2].y + ペイン設定.paddingBottom);
 });
 
-test('buildPaneLayout: エッジは行番号(fromRow/toRow)とレーンを持ち、fromRow < toRow になる', () => {
+test('buildPaneLayout: エッジは行番号(fromRow/toRow)と両端の列(fromCol/toCol)を持ち、fromRow < toRow になる', () => {
     const {buildPaneLayout} = ペインを読み込む();
     const layout = buildPaneLayout(ペイン記事, ペイン設定);
     assert.deepEqual(
@@ -165,42 +165,104 @@ test('buildPaneLayout: エッジは行番号(fromRow/toRow)とレーンを持ち
             ['middle', 'oldest', 1, 2, '']
         ]
     );
-    assert.ok(layout.edges.every(edge => typeof edge.lane === 'number'));
+    const 列 = Object.fromEntries(layout.nodes.map(node => [node.slug, node.col]));
+    assert.deepEqual(
+        layout.edges.map(edge => [edge.fromCol, edge.toCol]),
+        [[列.newest, 列.oldest], [列.middle, 列.oldest]]
+    );
+});
+
+test('buildPaneLayout: ノードは列(col)を持ち、最も新しい記事の引用チェーン(newest → oldest)が列 0 を継ぎ、middle は別の列に分岐する', () => {
+    const {buildPaneLayout} = ペインを読み込む();
+    const layout = buildPaneLayout(ペイン記事, ペイン設定);
+    const 列 = Object.fromEntries(layout.nodes.map(node => [node.slug, node.col]));
+    assert.equal(列.newest, 0);
+    assert.equal(列.oldest, 0);
+    assert.notEqual(列.middle, 0);
+    assert.equal(layout.minCol, Math.min(列.newest, 列.middle, 列.oldest));
+    assert.equal(layout.maxCol, Math.max(列.newest, 列.middle, 列.oldest));
 });
 
 test('buildPaneLayout: 空配列でも空のレイアウトを返す', () => {
     const {buildPaneLayout} = ペインを読み込む();
-    assert.deepEqual(buildPaneLayout([], ペイン設定), {nodes: [], edges: [], monthMarks: [], laneCount: 0, height: 0});
+    assert.deepEqual(buildPaneLayout([], ペイン設定), {nodes: [], edges: [], monthMarks: [], minCol: 0, maxCol: 0, height: 0});
 });
 
-test('assignLanes: 隣接行を結ぶエッジはレーン 0(直線)になる', () => {
-    const {assignLanes} = ペインを読み込む();
-    const edges = assignLanes([{fromRow: 0, toRow: 1}]);
-    assert.equal(edges[0].lane, 0);
+/**
+ * assignColumns の入力を作る。slug の配列を行順(新しい順)のノードとし、[引用元, 引用先] の組をエッジにする。
+ */
+function 列割り当て入力(slugs, 引用) {
+    const rowOf = Object.fromEntries(slugs.map((slug, row) => [slug, row]));
+    return {
+        nodes: slugs.map((slug, row) => ({slug, row})),
+        edges: 引用.map(([from, to]) => ({from, to, fromRow: rowOf[from], toRow: rowOf[to]}))
+    };
+}
+
+test('assignColumns: 引用チェーン(a → b → c)は 1 本の幹として同じ列 0 を継ぐ', () => {
+    const {assignColumns} = ペインを読み込む();
+    const {nodes, edges} = 列割り当て入力(['a', 'b', 'c'], [['a', 'b'], ['b', 'c']]);
+    const result = assignColumns(nodes, edges);
+    assert.deepEqual(result.cols, [0, 0, 0]);
+    assert.equal(result.minCol, 0);
+    assert.equal(result.maxCol, 0);
 });
 
-test('assignLanes: 行範囲が重なるエッジは別のレーンに割り当てる', () => {
-    const {assignLanes} = ペインを読み込む();
-    const edges = assignLanes([{fromRow: 0, toRow: 3}, {fromRow: 1, toRow: 3}, {fromRow: 2, toRow: 4}]);
-    // 0→3 / 1→3 / 2→4 はいずれも行 2〜3 で重なるので、3 本とも別レーン(1 以上)になる
-    const lanes = edges.map(edge => edge.lane);
-    assert.equal(new Set(lanes).size, 3);
-    assert.ok(lanes.every(lane => lane >= 1));
+test('assignColumns: 複数を引用する記事は、最も近い(新しい)引用先に列を継がせ、残りの引用先は別の列に分岐する', () => {
+    const {assignColumns} = ペインを読み込む();
+    // a は b(隣の行)と c(2 行下)を引用する。b が a の列を継ぎ、c は別の列に置かれる
+    const {nodes, edges} = 列割り当て入力(['a', 'b', 'c'], [['a', 'c'], ['a', 'b']]);
+    const result = assignColumns(nodes, edges);
+    assert.equal(result.cols[0], 0);
+    assert.equal(result.cols[1], 0);
+    assert.notEqual(result.cols[2], 0);
 });
 
-test('assignLanes: 端の行だけを共有するエッジ(0→2 と 2→4)は同じレーンを再利用できる', () => {
-    const {assignLanes} = ペインを読み込む();
-    const edges = assignLanes([{fromRow: 0, toRow: 2}, {fromRow: 2, toRow: 4}]);
-    assert.equal(edges[0].lane, 1);
-    assert.equal(edges[1].lane, 1);
+test('assignColumns: 既に列を持つ引用先へは合流し、新しい列を作らない', () => {
+    const {assignColumns} = ペインを読み込む();
+    // a → c で c は列 0 を継ぐ。b も c を引用するが、c の列は変わらず、b は自分の列から c へ合流する
+    const {nodes, edges} = 列割り当て入力(['a', 'b', 'c'], [['a', 'c'], ['b', 'c']]);
+    const result = assignColumns(nodes, edges);
+    assert.equal(result.cols[0], 0);
+    assert.equal(result.cols[2], 0);
+    assert.notEqual(result.cols[1], 0);
+    assert.equal(result.maxCol - result.minCol, 1);
 });
 
-test('assignLanes: 入力の並び順を保ち、元の配列を変更しない', () => {
-    const {assignLanes} = ペインを読み込む();
-    const 入力 = [{fromRow: 2, toRow: 5, from: 'b'}, {fromRow: 0, toRow: 3, from: 'a'}];
-    const edges = assignLanes(入力);
-    assert.deepEqual(edges.map(edge => edge.from), ['b', 'a']);
-    assert.equal('lane' in 入力[0], false);
+test('assignColumns: 引用先までの途中の行が別の幹に占有されていれば、空いている列に退避する', () => {
+    const {assignColumns} = ペインを読み込む();
+    // a(row0) は c(row2) と e(row4) を引用する。近い c が列 0 を継ぎ、行 1〜2 を占有するため、
+    // e は列 0 を通れず隣の列 1 に退避する(行 1〜4 を占有)。
+    // 次に b(row1) を処理すると列 0 も列 1 も塞がっているので列 -1 に置かれ、b が引用する d も列 -1 を継ぐ
+    const {nodes, edges} = 列割り当て入力(['a', 'b', 'c', 'd', 'e'], [['a', 'c'], ['a', 'e'], ['b', 'd']]);
+    const result = assignColumns(nodes, edges);
+    assert.deepEqual(result.cols, [0, -1, 0, -1, 1]);
+    assert.equal(result.minCol, -1);
+    assert.equal(result.maxCol, 1);
+});
+
+test('assignColumns: 引用も被引用も無い孤立した記事は、その行で空いていれば列 0 に置く', () => {
+    const {assignColumns} = ペインを読み込む();
+    const {nodes, edges} = 列割り当て入力(['a', 'b'], []);
+    assert.deepEqual(assignColumns(nodes, edges).cols, [0, 0]);
+});
+
+test('assignColumns: 幹が通っている行にある孤立した記事は、幹を避けて隣の列に置く', () => {
+    const {assignColumns} = ペインを読み込む();
+    // a → c の幹が行 1 を通るため、行 1 の孤立記事 b は列 0 に置けない
+    const {nodes, edges} = 列割り当て入力(['a', 'b', 'c'], [['a', 'c']]);
+    const result = assignColumns(nodes, edges);
+    assert.deepEqual(result.cols, [0, 1, 0]);
+});
+
+test('assignColumns: 入力のノード・エッジ配列を変更しない', () => {
+    const {assignColumns} = ペインを読み込む();
+    const {nodes, edges} = 列割り当て入力(['a', 'b'], [['a', 'b']]);
+    const ノード複製 = JSON.stringify(nodes);
+    const エッジ複製 = JSON.stringify(edges);
+    assignColumns(nodes, edges);
+    assert.equal(JSON.stringify(nodes), ノード複製);
+    assert.equal(JSON.stringify(edges), エッジ複製);
 });
 
 /** 引用チェーン: a → b → c → d(矢印は「引用する → 引用される」)、e は孤立 */
