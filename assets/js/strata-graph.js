@@ -4,7 +4,8 @@
  * サーバー側(Handlebars)が描画した記事一覧(data 属性に slug / 公開日 / 引用先 / 種別を持つ)を
  * 読み取り、SVG でグラフを描画する。外部ライブラリには依存しない。描画先は 2 種類ある。
  *
- * 1. custom-strata.hbs([data-strata]): 固定ページ用。縦軸を時間(公開日)としたアーク図(古い記事が上)
+ * 1. custom-strata.hbs([data-strata]): 固定ページ用。縦軸を時間(公開日)としたアーク図(新しい記事が上)。
+ *    年ごとの帯を地層として塗り分け、引用の線は古い層へ伸びる根として左に膨らむ弧で描く
  * 2. partials/strata-pane.hbs([data-strata-pane]): 記事ページ・トップページ左側の固定ペイン。新しい記事が上、
  *    月ごとの区切り線付き。エッジは git のブランチ図のようにレーンを分けて描き、
  *    現在の記事(data-current-slug)とその引用チェーン(2 ホップ)を強調し、無関係なものは暗くする。
@@ -28,10 +29,11 @@
     const KNOWN_KINDS = ['correction', 'supplement', 'continuation', 'reversal'];
 
     /**
-     * 記事一覧からグラフのレイアウト(ノード座標・エッジ・年ラベル)を計算する。
+     * 記事一覧からグラフのレイアウト(ノード座標・エッジ・年の区切り)を計算する。
      *
-     * y 座標は公開日の経過日数 × pixelsPerDay を基本とし、隣接ノードとの間隔が minGap を下回る場合は
-     * minGap まで押し下げる(同日公開の記事が重ならないようにするため)。
+     * 新しい記事を上(地表)、古い記事を下(深い層)に置く。y 座標は最新記事からの経過日数 × pixelsPerDay を
+     * 基本とし、隣接ノードとの間隔が minGap を下回る場合は minGap まで押し下げる
+     * (同日公開の記事が重ならないようにするため)。yearMarks は年ごとの地層の上端(その年で最も新しいノードの位置)。
      *
      * @param {Array<{slug: string, title: string, url: string, publishedAt: string, refs: string[], kind: string}>} posts
      * @param {{minGap: number, pixelsPerDay: number}} options
@@ -47,7 +49,7 @@
                 return Object.assign({}, post, {time: time});
             })
             .sort(function (a, b) {
-                return a.time - b.time;
+                return b.time - a.time;
             });
 
         if (sorted.length === 0) {
@@ -56,12 +58,12 @@
 
         const nodes = [];
         const yearMarks = [];
-        const firstTime = sorted[0].time;
+        const newestTime = sorted[0].time;
         let previousY = -Infinity;
         let previousYear = null;
 
         sorted.forEach(function (post) {
-            const scaledY = ((post.time - firstTime) / MS_PER_DAY) * options.pixelsPerDay;
+            const scaledY = ((newestTime - post.time) / MS_PER_DAY) * options.pixelsPerDay;
             const y = Math.max(scaledY, previousY + options.minGap);
             const year = new Date(post.time).getFullYear();
             if (year !== previousYear) {
@@ -115,7 +117,7 @@
         return element;
     }
 
-    /** 表示用にタイトルを一定文字数で切り詰める(全文は <title> でツールチップ表示する) */
+    /** 表示用にタイトルを一定文字数で切り詰める(全文は aria-label に持たせる) */
     function truncate(text, maxLength) {
         return text.length > maxLength ? text.slice(0, maxLength - 1) + '…' : text;
     }
@@ -124,7 +126,10 @@
      * レイアウトを SVG として描画する。
      *
      * @param {ReturnType<typeof buildLayout>} layout
-     * @param {{axisX: number, paddingTop: number, paddingBottom: number, width: number, maxArcWidth: number, nodeRadius: number, titleMaxLength: number, label: string}} options
+     * ペインと同じ「地層の中を種と根が伸びる」デザイン: 年ごとの帯を地層として塗り分け(古い年ほど深く濃い)、
+     * 境界は波線、記事は種(楕円)、引用の線は古い層へ伸びる根(左に膨らむ弧)として描く。
+     *
+     * @param {{axisX: number, paddingTop: number, paddingBottom: number, width: number, maxArcWidth: number, nodeRadius: number, maxDepthShade: number, titleMaxLength: number, label: string}} options
      * @returns {SVGSVGElement}
      */
     function renderSvg(layout, options) {
@@ -141,23 +146,46 @@
             nodeY[node.slug] = node.y + options.paddingTop;
         });
 
-        // 時間軸
+        // 地層の帯(年ごと)。境界はその年で最も新しいノードの少し上に置く
+        const yearMarks = layout.yearMarks.map(function (mark) {
+            return {label: String(mark.year), y: mark.y + options.paddingTop - options.nodeRadius * 3};
+        });
+        const bandGroup = createElement('g', {class: 'gh-strata-strata'});
+        buildStrataBands(yearMarks, height).forEach(function (band) {
+            bandGroup.appendChild(createElement('rect', {
+                class: 'gh-strata-stratum',
+                x: 0, y: band.top, width: options.width, height: band.bottom - band.top,
+                'data-depth': String(Math.min(band.depth, options.maxDepthShade))
+            }));
+        });
+        svg.appendChild(bandGroup);
+
+        // 地層の境界線(波線)と年ラベル。ラベルは時間軸のすぐ右・境界線の上に置く
+        // (右端に寄せると狭い画面で横スクロールしないと見えなくなるため)
+        const yearGroup = createElement('g', {class: 'gh-strata-years'});
+        yearMarks.forEach(function (mark, index) {
+            yearGroup.appendChild(createElement('path', {
+                class: 'gh-strata-year-line',
+                d: strataBoundaryPath(mark.y, options.width, {amplitude: 3, wavelength: 48, phase: index})
+            }));
+            const label = createElement('text', {
+                class: 'gh-strata-year',
+                x: options.axisX + options.nodeRadius * 2 + 4,
+                y: mark.y - 6
+            });
+            label.textContent = mark.label;
+            yearGroup.appendChild(label);
+        });
+        svg.appendChild(yearGroup);
+
+        // 時間軸(地表から深部へ下りる細い線)
         svg.appendChild(createElement('line', {
             class: 'gh-strata-axis',
             x1: options.axisX, y1: options.paddingTop - options.nodeRadius * 2,
             x2: options.axisX, y2: height - options.paddingBottom + options.nodeRadius * 2
         }));
-        layout.yearMarks.forEach(function (mark) {
-            const label = createElement('text', {
-                class: 'gh-strata-year',
-                x: options.axisX + options.nodeRadius * 2 + 4,
-                y: mark.y + options.paddingTop - options.nodeRadius * 2
-            });
-            label.textContent = String(mark.year);
-            svg.appendChild(label);
-        });
 
-        // エッジ(引用元 → 引用先)。時間軸の左側に楕円弧として描く
+        // エッジ(引用元 → 引用先)。新しい記事から古い層へ伸びる根として、時間軸の左側に楕円弧で描く
         const edgeGroup = createElement('g', {class: 'gh-strata-edges'});
         layout.edges.forEach(function (edge) {
             const fromY = nodeY[edge.from];
@@ -180,13 +208,11 @@
         const nodeGroup = createElement('g', {class: 'gh-strata-nodes'});
         layout.nodes.forEach(function (node) {
             const y = nodeY[node.slug];
-            const anchor = createElement('a', {class: 'gh-strata-node', href: node.url, 'data-slug': node.slug});
-            const tooltip = createElement('title', {});
-            tooltip.textContent = node.title;
-            anchor.appendChild(tooltip);
-            anchor.appendChild(createElement('circle', {
+            const anchor = createElement('a', {class: 'gh-strata-node', href: node.url, 'data-slug': node.slug, 'aria-label': node.title});
+            // 記事は「種」の形(縦長の楕円)で描く
+            anchor.appendChild(createElement('ellipse', {
                 class: 'gh-strata-dot' + (node.kind ? ' is-' + node.kind : ''),
-                cx: options.axisX, cy: y, r: options.nodeRadius
+                cx: options.axisX, cy: y, rx: options.nodeRadius, ry: options.nodeRadius * 1.3
             }));
             const title = createElement('text', {
                 class: 'gh-strata-title',
@@ -732,6 +758,7 @@
             paddingBottom: 24,
             maxArcWidth: 160,
             nodeRadius: 6,
+            maxDepthShade: 6,
             titleMaxLength: 32,
             label: container.dataset.strataLabel || ''
         });
