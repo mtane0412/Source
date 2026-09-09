@@ -111,7 +111,9 @@ function ペインを読み込む() {
     return {
         buildPaneLayout: (posts, options) => 正規化(api.buildPaneLayout(posts, options)),
         assignLanes: edges => 正規化(api.assignLanes(edges)),
-        computeEmphasis: (edges, slug, hops) => 正規化(api.computeEmphasis(edges, slug, hops))
+        computeEmphasis: (nodes, edges, slug, hops) => 正規化(api.computeEmphasis(nodes, edges, slug, hops)),
+        buildStrataBands: (marks, height) => 正規化(api.buildStrataBands(marks, height)),
+        strataBoundaryPath: (y, width, options) => api.strataBoundaryPath(y, width, options)
     };
 }
 
@@ -202,37 +204,78 @@ const 連鎖エッジ = [
     {from: 'b', to: 'c'},
     {from: 'c', to: 'd'}
 ];
+const 連鎖ノード = [{slug: 'a'}, {slug: 'b'}, {slug: 'c'}, {slug: 'd'}, {slug: 'e'}];
 
 test('computeEmphasis: 現在記事から引用の向きを問わず 2 ホップまでの距離を返す', () => {
     const {computeEmphasis} = ペインを読み込む();
-    const emphasis = computeEmphasis(連鎖エッジ, 'b', 2);
+    const emphasis = computeEmphasis(連鎖ノード, 連鎖エッジ, 'b', 2);
     assert.deepEqual(emphasis.nodes, {b: 0, a: 1, c: 1, d: 2});
 });
 
 test('computeEmphasis: エッジの距離は両端ノードの近いほうの距離 + 1 になる', () => {
     const {computeEmphasis} = ペインを読み込む();
-    const emphasis = computeEmphasis(連鎖エッジ, 'b', 2);
+    const emphasis = computeEmphasis(連鎖ノード, 連鎖エッジ, 'b', 2);
     assert.deepEqual(emphasis.edges, [1, 1, 2]);
 });
 
 test('computeEmphasis: ホップ数の上限を超えるノード・エッジは含めない(距離 -1)', () => {
     const {computeEmphasis} = ペインを読み込む();
-    const emphasis = computeEmphasis(連鎖エッジ, 'a', 1);
+    const emphasis = computeEmphasis(連鎖ノード, 連鎖エッジ, 'a', 1);
     assert.deepEqual(emphasis.nodes, {a: 0, b: 1});
     assert.deepEqual(emphasis.edges, [1, -1, -1]);
 });
 
 test('computeEmphasis: 現在記事がグラフに無ければ何も強調しない', () => {
     const {computeEmphasis} = ペインを読み込む();
-    const emphasis = computeEmphasis(連鎖エッジ, 'missing', 2);
+    const emphasis = computeEmphasis(連鎖ノード, 連鎖エッジ, 'missing', 2);
     assert.deepEqual(emphasis.nodes, {});
     assert.deepEqual(emphasis.edges, [-1, -1, -1]);
 });
 
 test('computeEmphasis: 現在記事の slug が空(トップページ)なら中立モードになり、何も暗くしない(距離 null)', () => {
     const {computeEmphasis} = ペインを読み込む();
-    const emphasis = computeEmphasis(連鎖エッジ, '', 2);
+    const emphasis = computeEmphasis(連鎖ノード, 連鎖エッジ, '', 2);
     assert.equal(emphasis.neutral, true);
     assert.deepEqual(emphasis.nodes, {});
     assert.deepEqual(emphasis.edges, [null, null, null]);
+});
+
+/* ------------------------------------------------------------------
+ * 孤立した現在記事の強調(引用が無い記事でもノードとして存在すれば距離 0 にする)
+ * ------------------------------------------------------------------ */
+
+test('computeEmphasis: 引用が無い孤立した現在記事でも、ノードに存在すれば距離 0 で強調し、他はすべて暗くする', () => {
+    const {computeEmphasis} = ペインを読み込む();
+    const ノード = [{slug: 'a'}, {slug: 'b'}, {slug: 'c'}, {slug: 'd'}, {slug: 'lonely'}];
+    const emphasis = computeEmphasis(ノード, 連鎖エッジ, 'lonely', 2);
+    assert.equal(emphasis.neutral, false);
+    assert.deepEqual(emphasis.nodes, {lonely: 0});
+    assert.deepEqual(emphasis.edges, [-1, -1, -1]);
+});
+
+/* ------------------------------------------------------------------
+ * 地層の帯(月ごとの区切りの間を地層として塗り分ける)
+ * ------------------------------------------------------------------ */
+
+test('buildStrataBands: 月の区切りごとに帯を作り、上から順に深さ(depth)が増える', () => {
+    const {buildStrataBands} = ペインを読み込む();
+    const bands = buildStrataBands([{label: '2026-03', y: 15}, {label: '2026-01', y: 71}], 140);
+    assert.deepEqual(bands, [
+        {label: '2026-03', top: 15, bottom: 71, depth: 0},
+        {label: '2026-01', top: 71, bottom: 140, depth: 1}
+    ]);
+});
+
+test('buildStrataBands: 区切りが無ければ帯も無い', () => {
+    const {buildStrataBands} = ペインを読み込む();
+    assert.deepEqual(buildStrataBands([], 100), []);
+});
+
+test('strataBoundaryPath: 波線は指定した y から始まり、右端(width)まで到達する', () => {
+    const {strataBoundaryPath} = ペインを読み込む();
+    const path = strataBoundaryPath(50, 200, {amplitude: 2, wavelength: 40});
+    assert.match(path, /^M 0 50 /);
+    // 最後の座標の x は width に一致する
+    const 座標 = path.trim().split(/\s+/);
+    assert.equal(Number(座標[座標.length - 2]), 200);
 });

@@ -2720,6 +2720,22 @@ figcaption a {
 :root {
     --strata-pane-width: clamp(240px, 24vw, 340px);
     --strata-pane-collapsed-width: 22px;
+    /* 地層・種・根の色。地層は土色を半透明で重ね、深い層ほど濃くする */
+    --strata-soil: 120 85 45;
+    --strata-root: rgb(122 88 52 / 0.7);
+    --strata-root-dim: rgb(122 88 52 / 0.22);
+    --strata-seed: #7a5834;
+    --strata-seed-dim: rgb(122 88 52 / 0.3);
+    --strata-boundary: rgb(90 62 30 / 0.28);
+}
+
+:root.has-light-text {
+    --strata-soil: 214 180 140;
+    --strata-root: rgb(214 180 140 / 0.65);
+    --strata-root-dim: rgb(214 180 140 / 0.2);
+    --strata-seed: #d6b48c;
+    --strata-seed-dim: rgb(214 180 140 / 0.3);
+    --strata-boundary: rgb(214 180 140 / 0.3);
 }
 
 .post-template.has-strata-pane .gh-viewport,
@@ -2766,8 +2782,39 @@ figcaption a {
     overflow: visible;
 }
 
+/* 地層の帯。新しい月(上)ほど浅く薄い色、古い月(下)ほど深く濃い色にする(data-depth は 0〜6 で頭打ち) */
+.gh-strata-pane-stratum {
+    fill: rgb(var(--strata-soil) / 0.04);
+}
+
+.gh-strata-pane-stratum[data-depth="1"] {
+    fill: rgb(var(--strata-soil) / 0.08);
+}
+
+.gh-strata-pane-stratum[data-depth="2"] {
+    fill: rgb(var(--strata-soil) / 0.12);
+}
+
+.gh-strata-pane-stratum[data-depth="3"] {
+    fill: rgb(var(--strata-soil) / 0.16);
+}
+
+.gh-strata-pane-stratum[data-depth="4"] {
+    fill: rgb(var(--strata-soil) / 0.2);
+}
+
+.gh-strata-pane-stratum[data-depth="5"] {
+    fill: rgb(var(--strata-soil) / 0.24);
+}
+
+.gh-strata-pane-stratum[data-depth="6"] {
+    fill: rgb(var(--strata-soil) / 0.28);
+}
+
+/* 地層の境界線(波線) */
 .gh-strata-pane-month-line {
-    stroke: var(--color-border);
+    fill: none;
+    stroke: var(--strata-boundary);
     stroke-width: 1;
 }
 
@@ -2778,10 +2825,12 @@ figcaption a {
     text-anchor: end;
 }
 
+/* 引用の線は、新しい記事(上)から古い層(下)へ伸びる「根」として土色で描く */
 .gh-strata-pane-edge {
     fill: none;
-    stroke: var(--color-dark-border);
-    stroke-width: 1.2;
+    stroke: var(--strata-root);
+    stroke-width: 1.4;
+    stroke-linecap: round;
     transition: stroke 0.15s ease;
 }
 
@@ -2810,29 +2859,38 @@ figcaption a {
 }
 
 .gh-strata-pane-edge.is-dim {
-    stroke: var(--color-border);
+    stroke: var(--strata-root-dim);
 }
 
 .gh-strata-pane-node {
     cursor: pointer;
 }
 
+/* 記事は「種」(縦長の楕円)。透明な太い stroke はマウスの当たり判定を広げるため */
 .gh-strata-pane-dot {
-    fill: var(--color-dark-border);
+    fill: var(--strata-seed);
     stroke: transparent;
     stroke-width: 10;
-    transition: fill 0.15s ease;
+    transition: fill 0.15s ease, rx 0.15s ease, ry 0.15s ease;
 }
 
 .gh-strata-pane-dot.is-correction {
     fill: var(--ghost-accent-color);
 }
 
-/* 現在の記事(輪をつける)と引用チェーン上の記事を強調し、無関係な記事は暗くする */
+/* 現在の記事は「芽吹いた種」(輪と芽をつける)。引用チェーン上の記事を強調し、無関係な記事は暗くする */
 .gh-strata-pane-ring {
     fill: none;
     stroke: var(--ghost-accent-color);
     stroke-width: 2;
+}
+
+.gh-strata-pane-sprout {
+    fill: none;
+    stroke: var(--ghost-accent-color);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .gh-strata-pane-node.is-level-0 .gh-strata-pane-dot,
@@ -2846,14 +2904,45 @@ figcaption a {
 }
 
 .gh-strata-pane-node.is-dim .gh-strata-pane-dot {
-    fill: var(--color-border);
+    fill: var(--strata-seed-dim);
 }
 
 .gh-strata-pane-node:hover .gh-strata-pane-dot,
 .gh-strata-pane-node:focus .gh-strata-pane-dot {
     fill: var(--ghost-accent-color);
     opacity: 1;
-    r: 6;
+    rx: 5.5;
+    ry: 7;
+}
+
+/* 種にマウスを乗せたときのツールチップ(タイトルと公開日)。位置は JS がペイン基準で決める */
+.gh-strata-pane-tooltip {
+    position: absolute;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-width: calc(var(--strata-pane-width) - 64px);
+    padding: 6px 10px;
+    font-size: 1.2rem;
+    line-height: 1.4;
+    color: var(--color-primary-text);
+    background-color: var(--background-color);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+    pointer-events: none;
+}
+
+.gh-strata-pane-tooltip-title {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.gh-strata-pane-tooltip-date {
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    color: var(--color-secondary-text);
 }
 
 /* 開閉ボタンは狭い画面でだけ表示する */

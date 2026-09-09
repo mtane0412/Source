@@ -8,13 +8,17 @@
  * 2. partials/strata-pane.hbs([data-strata-pane]): 記事ページ・トップページ左側の固定ペイン。新しい記事が上、
  *    月ごとの区切り線付き。エッジは git のブランチ図のようにレーンを分けて描き、
  *    現在の記事(data-current-slug)とその引用チェーン(2 ホップ)を強調し、無関係なものは暗くする。
- *    トップページでは data-current-slug が空になり、中立モード(強調も暗転もなし)で描く
+ *    引用の無い孤立した記事でも、現在記事であれば強調する。
+ *    トップページでは data-current-slug が空になり、中立モード(強調も暗転もなし)で描く。
+ *    見た目は「地層(strata)の中を種と根が伸びる」イメージ: 月ごとの帯を地層として塗り分け(古いほど深く濃い)、
+ *    境界は波線、記事は種(楕円)、現在記事は芽吹いた種、引用の線は古い層へ伸びる根として描く。
+ *    種にマウスを乗せると HTML のツールチップでタイトルと公開日を表示する
  *
  * - ノード: 記事。クリックで記事ページへ遷移する
  * - エッジ: 引用関係(引用元 → 引用先)。種別タグ(#correction 等)があれば線の見た目を変える
  * - JavaScript が無効な環境では元の記事一覧がそのまま表示される(有効時も支援技術向けに残す)
  *
- * レイアウト計算(buildLayout / buildPaneLayout / assignLanes / computeEmphasis)は DOM に依存しない
+ * レイアウト計算(buildLayout / buildPaneLayout / assignLanes / computeEmphasis / buildStrataBands / strataBoundaryPath)は DOM に依存しない
  * 純粋関数として window.HyperstrataGraph に公開し、scripts/strata-graph.test.mjs から検証する。
  */
 (function () {
@@ -334,6 +338,10 @@
     /**
      * 現在の記事から引用の向きを問わず maxHops ホップ以内にあるノード・エッジの距離を求める。
      *
+     * 現在記事の存在はノード一覧で判定する。引用が一本も無い孤立した記事でも、ノードとして存在すれば
+     * 距離 0(現在記事)として強調され、他のノード・エッジはすべて暗くなる。
+     *
+     * @param {Array<{slug: string}>} nodes グラフ上の全ノード
      * @param {Array<{from: string, to: string}>} edges
      * @param {string} currentSlug
      * @param {number} maxHops
@@ -342,7 +350,7 @@
      *   currentSlug が空(トップページなど現在記事が無い場合)は中立モード(neutral: true)となり、
      *   nodes は空、edges はすべて null で、何も強調せず何も暗くしない
      */
-    function computeEmphasis(edges, currentSlug, maxHops) {
+    function computeEmphasis(nodes, edges, currentSlug, maxHops) {
         if (!currentSlug) {
             return {
                 neutral: true,
@@ -353,13 +361,12 @@
             };
         }
         const neighbors = {};
-        let known = false;
+        const known = nodes.some(function (node) {
+            return node.slug === currentSlug;
+        });
         edges.forEach(function (edge) {
             (neighbors[edge.from] = neighbors[edge.from] || []).push(edge.to);
             (neighbors[edge.to] = neighbors[edge.to] || []).push(edge.from);
-            if (edge.from === currentSlug || edge.to === currentSlug) {
-                known = true;
-            }
         });
         const distance = {};
         if (known) {
@@ -370,7 +377,7 @@
                 if (distance[slug] >= maxHops) {
                     continue;
                 }
-                neighbors[slug].forEach(function (next) {
+                (neighbors[slug] || []).forEach(function (next) {
                     if (!Object.prototype.hasOwnProperty.call(distance, next)) {
                         distance[next] = distance[slug] + 1;
                         queue.push(next);
@@ -416,6 +423,52 @@
             ' C ' + x + ' ' + (bottom - half) + ' ' + x0 + ' ' + (bottom - half) + ' ' + x0 + ' ' + bottom;
     }
 
+    /**
+     * 月の区切り(monthMarks)の間を「地層」の帯として切り出す。上の帯ほど新しく(浅く)、
+     * 下の帯ほど古い(深い)。depth は上から 0, 1, 2, … と増え、CSS で深さに応じた色の濃さに使う。
+     *
+     * @param {Array<{label: string, y: number}>} monthMarks 上から順に並んだ月の区切り
+     * @param {number} height SVG 全体の高さ(最後の帯の下端)
+     * @returns {Array<{label: string, top: number, bottom: number, depth: number}>}
+     */
+    function buildStrataBands(monthMarks, height) {
+        return monthMarks.map(function (mark, index) {
+            const next = monthMarks[index + 1];
+            return {
+                label: mark.label,
+                top: mark.y,
+                bottom: next ? next.y : height,
+                depth: index
+            };
+        });
+    }
+
+    /**
+     * 地層の境界線を、まっすぐな直線ではなく緩やかにうねる波線のパスとして作る。
+     * 二次ベジェ曲線を wavelength ごとに上下交互に膨らませて繋ぐ。
+     * phase(0 以上の整数)で膨らみの向きをずらし、隣り合う境界線が同じ形にならないようにする。
+     *
+     * @param {number} y 境界線の基準となる y 座標
+     * @param {number} width 線の右端(x)
+     * @param {{amplitude: number, wavelength: number, phase?: number}} options
+     * @returns {string} SVG path の d 属性
+     */
+    function strataBoundaryPath(y, width, options) {
+        const phase = options.phase || 0;
+        let d = 'M 0 ' + y;
+        let x = 0;
+        let index = 0;
+        while (x < width) {
+            const nextX = Math.min(x + options.wavelength, width);
+            const direction = (index + phase) % 2 === 0 ? -1 : 1;
+            const controlX = x + (nextX - x) / 2;
+            d += ' Q ' + controlX + ' ' + (y + direction * options.amplitude) + ' ' + nextX + ' ' + y;
+            x = nextX;
+            index += 1;
+        }
+        return d;
+    }
+
     /** 距離に応じた強調クラス名を返す(0: 現在記事、1: 直接の引用、2: 2 ホップ、-1: 無関係、null: 中立モードで強調なし) */
     function emphasisClass(distance) {
         if (distance === null) {
@@ -428,11 +481,32 @@
     }
 
     /**
+     * 現在記事の種から伸びる「芽」(茎と双葉)のパスを作る。baseY は種の上端、size は芽の高さ。
+     *
+     * @param {number} x 茎の x 座標
+     * @param {number} baseY 芽の付け根の y 座標
+     * @param {number} size 芽の高さ(px)
+     * @returns {string} SVG path の d 属性
+     */
+    function sproutPath(x, baseY, size) {
+        const topY = baseY - size;
+        const leaf = size * 0.55;
+        return 'M ' + x + ' ' + baseY + ' L ' + x + ' ' + topY +
+            ' M ' + x + ' ' + (topY + leaf * 0.6) +
+            ' Q ' + (x - leaf) + ' ' + (topY + leaf * 0.5) + ' ' + (x - leaf * 0.9) + ' ' + (topY - leaf * 0.35) +
+            ' Q ' + (x - leaf * 0.2) + ' ' + (topY - leaf * 0.1) + ' ' + x + ' ' + (topY + leaf * 0.6) +
+            ' M ' + x + ' ' + (topY + leaf * 0.2) +
+            ' Q ' + (x + leaf) + ' ' + (topY + leaf * 0.1) + ' ' + (x + leaf * 0.9) + ' ' + (topY - leaf * 0.75) +
+            ' Q ' + (x + leaf * 0.2) + ' ' + (topY - leaf * 0.5) + ' ' + x + ' ' + (topY + leaf * 0.2);
+    }
+
+    /**
      * 固定ペイン用のレイアウトを SVG として描画する。
      *
      * @param {ReturnType<typeof buildPaneLayout>} layout
      * @param {ReturnType<typeof computeEmphasis>} emphasis
-     * @param {{axisX: number, laneWidth: number, rowHeight: number, width: number, nodeRadius: number, label: string, dateLocale: string}} options
+     * @param {{axisX: number, laneWidth: number, rowHeight: number, width: number, nodeRadius: number, maxDepthShade: number, bleed: number, label: string, dateLocale: string}} options
+     *   maxDepthShade は地層の色の濃さの段階数の上限(CSS の data-depth と一致させる)、bleed は地層をペイン端まで届かせるための左右のはみ出し幅(px)
      */
     function renderPaneSvg(layout, emphasis, options) {
         const svg = createElement('svg', {
@@ -447,17 +521,32 @@
             nodeY[node.slug] = node.y;
         });
 
-        // 月の区切り線とラベル(ラベルは右端に寄せる)
+        // 地層の帯。月ごとの区切りの間を塗り分け、深い(古い)層ほど濃くする(色は CSS の data-depth で決める)。
+        // SVG はペイン中央に置かれるため、帯と境界線は bleed ぶん左右にはみ出させてペインの端まで届かせる
+        // (SVG は overflow: visible、ペインのスクロール領域が overflow-x: hidden で切り取る)
+        const bleedWidth = options.width + options.bleed * 2;
+        const bandGroup = createElement('g', {class: 'gh-strata-pane-strata', transform: 'translate(' + (-options.bleed) + ' 0)'});
+        buildStrataBands(layout.monthMarks, layout.height).forEach(function (band) {
+            bandGroup.appendChild(createElement('rect', {
+                class: 'gh-strata-pane-stratum',
+                x: 0, y: band.top, width: bleedWidth, height: band.bottom - band.top,
+                'data-depth': String(Math.min(band.depth, options.maxDepthShade))
+            }));
+        });
+        svg.appendChild(bandGroup);
+
+        // 地層の境界線(緩やかな波線)とラベル(ラベルは右端に寄せる)
         const monthGroup = createElement('g', {class: 'gh-strata-pane-months'});
-        layout.monthMarks.forEach(function (mark) {
-            monthGroup.appendChild(createElement('line', {
+        layout.monthMarks.forEach(function (mark, index) {
+            monthGroup.appendChild(createElement('path', {
                 class: 'gh-strata-pane-month-line',
-                x1: 0, y1: mark.y, x2: options.width, y2: mark.y
+                transform: 'translate(' + (-options.bleed) + ' 0)',
+                d: strataBoundaryPath(mark.y, bleedWidth, {amplitude: 2.5, wavelength: 36, phase: index})
             }));
             const label = createElement('text', {
                 class: 'gh-strata-pane-month-label',
                 x: options.width - 8,
-                y: mark.y - 4
+                y: mark.y - 5
             });
             label.textContent = mark.label;
             monthGroup.appendChild(label);
@@ -497,24 +586,78 @@
             if (distance === 0) {
                 anchor.setAttribute('aria-current', 'page');
             }
-            const tooltip = createElement('title', {});
-            tooltip.textContent = node.title + ' (' + new Date(node.publishedAt).toLocaleDateString(options.dateLocale) + ')';
-            anchor.appendChild(tooltip);
+            // ツールチップは HTML 側(showTooltip)で出すため、支援技術向けの名前は aria-label で与える
+            const dateText = new Date(node.publishedAt).toLocaleDateString(options.dateLocale);
+            anchor.setAttribute('aria-label', node.title + ' (' + dateText + ')');
+            anchor.setAttribute('data-title', node.title);
+            anchor.setAttribute('data-date', dateText);
             if (distance === 0) {
-                // 現在の記事には輪をつける
+                // 現在の記事は「芽吹いた種」として、輪と芽(茎と双葉)をつける
                 anchor.appendChild(createElement('circle', {
                     class: 'gh-strata-pane-ring',
                     cx: options.axisX, cy: node.y, r: options.nodeRadius + 4
                 }));
+                anchor.appendChild(createElement('path', {
+                    class: 'gh-strata-pane-sprout',
+                    d: sproutPath(options.axisX, node.y - options.nodeRadius - 4, options.nodeRadius * 2.5)
+                }));
             }
-            anchor.appendChild(createElement('circle', {
+            // ノードは「種」の形(縦長の楕円)で描く
+            anchor.appendChild(createElement('ellipse', {
                 class: 'gh-strata-pane-dot' + (node.kind ? ' is-' + node.kind : ''),
-                cx: options.axisX, cy: node.y, r: options.nodeRadius
+                cx: options.axisX, cy: node.y, rx: options.nodeRadius, ry: options.nodeRadius * 1.3
             }));
             nodeGroup.appendChild(anchor);
         });
         svg.appendChild(nodeGroup);
         return svg;
+    }
+
+    /**
+     * ノード(種)にマウスを乗せた・フォーカスしたときに、記事のタイトルと公開日を HTML のツールチップで表示する。
+     * SVG の <title> は表示までの遅延が長く狭いペインでは読みづらいため、ペイン内に絶対配置した要素を使う。
+     * ツールチップはペインの座標系(fixed)に対して置くため、スクロール領域に切り取られない。
+     */
+    function setupTooltip(pane, svg) {
+        const tooltip = document.createElement('div');
+        tooltip.className = 'gh-strata-pane-tooltip';
+        tooltip.setAttribute('role', 'tooltip');
+        tooltip.hidden = true;
+        const title = document.createElement('span');
+        title.className = 'gh-strata-pane-tooltip-title';
+        const date = document.createElement('span');
+        date.className = 'gh-strata-pane-tooltip-date';
+        tooltip.appendChild(title);
+        tooltip.appendChild(date);
+        pane.appendChild(tooltip);
+
+        const show = function (anchor) {
+            title.textContent = anchor.getAttribute('data-title');
+            date.textContent = anchor.getAttribute('data-date');
+            const dot = anchor.querySelector('.gh-strata-pane-dot');
+            const dotRect = dot.getBoundingClientRect();
+            const paneRect = pane.getBoundingClientRect();
+            tooltip.hidden = false;
+            tooltip.style.left = (dotRect.right - paneRect.left + 10) + 'px';
+            // ツールチップの縦中央を種に合わせる(表示後に高さが確定するので hidden 解除後に計算する)
+            const top = dotRect.top + dotRect.height / 2 - paneRect.top - tooltip.offsetHeight / 2;
+            tooltip.style.top = Math.max(4, Math.min(top, paneRect.height - tooltip.offsetHeight - 4)) + 'px';
+        };
+        const hide = function () {
+            tooltip.hidden = true;
+        };
+        Array.from(svg.querySelectorAll('.gh-strata-pane-node')).forEach(function (anchor) {
+            anchor.addEventListener('mouseenter', function () {
+                show(anchor);
+            });
+            anchor.addEventListener('focus', function () {
+                show(anchor);
+            });
+            anchor.addEventListener('mouseleave', hide);
+            anchor.addEventListener('blur', hide);
+        });
+        // スクロール中は位置がずれるので隠す
+        pane.querySelector('[data-strata-scroll]').addEventListener('scroll', hide, {passive: true});
     }
 
     /** ペインの開閉(狭い画面向け)。aria-expanded と is-open クラスを同期する */
@@ -544,13 +687,15 @@
         }
         const rowHeight = 26;
         const layout = buildPaneLayout(posts, {rowHeight: rowHeight, monthGap: 30, paddingTop: 24, paddingBottom: 48});
-        const emphasis = computeEmphasis(layout.edges, pane.dataset.currentSlug || '', 2);
+        const emphasis = computeEmphasis(layout.nodes, layout.edges, pane.dataset.currentSlug || '', 2);
         const svg = renderPaneSvg(layout, emphasis, {
             axisX: 24,
             laneWidth: 12,
             rowHeight: rowHeight,
             width: 24 + (layout.laneCount + 1) * 12 + 72,
             nodeRadius: 4,
+            maxDepthShade: 6,
+            bleed: 400,
             label: pane.dataset.strataLabel || '',
             dateLocale: document.documentElement.lang || undefined
         });
@@ -558,6 +703,7 @@
         scroll.insertBefore(svg, list);
         list.classList.add('is-sr-only');
         pane.classList.add('is-rendered');
+        setupTooltip(pane, svg);
 
         // 現在の記事がペインの中央に来るようにスクロールしておく
         const current = layout.nodes.filter(function (node) {
@@ -602,7 +748,9 @@
         buildLayout: buildLayout,
         buildPaneLayout: buildPaneLayout,
         assignLanes: assignLanes,
-        computeEmphasis: computeEmphasis
+        computeEmphasis: computeEmphasis,
+        buildStrataBands: buildStrataBands,
+        strataBoundaryPath: strataBoundaryPath
     };
 
     if (typeof document !== 'undefined') {
