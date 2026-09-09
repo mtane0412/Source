@@ -1,6 +1,8 @@
 {{!< default}}
 {{!-- The tag above means: insert everything in this file into the body of the default.hbs template --}}
 
+{{!-- Hyperstrata: ページ送り /page/N/ もトップページ(home.hbs)と同じ地層タイムラインを描く。
+     strata-graph.js はこのページを fetch して [data-strata-row] を継ぎ足すため、構造を home.hbs と揃えておく --}}
 <main class="gh-main">
-    {{> "components/post-list" feed="index" postFeedStyle=@custom.post_feed_style showTitle=true showSidebar=@custom.show_publication_info_sidebar}}
+    {{> "strata-timeline"}}
 </main>

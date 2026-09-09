@@ -449,3 +449,34 @@ test('buildTimelineLayout: 行が無ければ空のレイアウトを返す', ()
     const {buildTimelineLayout} = タイムラインを読み込む();
     assert.deepEqual(buildTimelineLayout([], タイムライン記事), {bands: [], nodes: [], edges: [], offPage: []});
 });
+
+/* ------------------------------------------------------------------
+ * トップページの無限スクロール(次ページの行の追加)
+ * ------------------------------------------------------------------ */
+
+/** 無限スクロール用 API を読み込む */
+function 無限スクロールを読み込む() {
+    const window = {};
+    vm.runInNewContext(スクリプト, {window});
+    const api = window.HyperstrataGraph;
+    return {
+        selectNewTimelineRows: (existing, incoming) => JSON.parse(JSON.stringify(api.selectNewTimelineRows(existing, incoming)))
+    };
+}
+
+test('selectNewTimelineRows: 次ページの行のうち、表示済みの slug と重複しない行の添字を順に返す', () => {
+    const {selectNewTimelineRows} = 無限スクロールを読み込む();
+    // 取得の合間に記事が公開されてページ境界がずれると、既に表示した記事が次ページの先頭に再び現れる
+    const 添字 = selectNewTimelineRows(['newest', 'middle', 'oldest'], ['oldest', 'ancient', 'prehistoric']);
+    assert.deepEqual(添字, [1, 2]);
+});
+
+test('selectNewTimelineRows: 次ページ内で同じ slug が重複した場合も 1 件だけ採用する', () => {
+    const {selectNewTimelineRows} = 無限スクロールを読み込む();
+    assert.deepEqual(selectNewTimelineRows(['newest'], ['ancient', 'ancient']), [0]);
+});
+
+test('selectNewTimelineRows: 次ページが空なら空配列を返す', () => {
+    const {selectNewTimelineRows} = 無限スクロールを読み込む();
+    assert.deepEqual(selectNewTimelineRows(['newest'], []), []);
+});
