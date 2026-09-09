@@ -10,7 +10,10 @@
  * - 引用タグ以外の既存タグは維持する
  * - 差分がある記事だけ更新する(冪等)
  * - どの記事にも付いていない引用タグ(引用先 slug の変更やリンク削除で不要になったもの)は削除する
- * - `--dry-run` を付けると更新・削除内容の表示のみ行う
+ * - 公開記事の一覧と引用関係を Hyperstrata グラフ用の `assets/graph.json` に書き出す
+ *   (テーマの assets/js/strata-graph.js が fetch して描画する。`{{#get}}` の 100 件上限と
+ *   全ページへの一覧埋め込みを避けるため、テーマ側ではなく本スクリプトで生成する)
+ * - `--dry-run` を付けると更新・削除内容と graph.json の差分有無の表示のみ行う
  *
  * 必要な環境変数(既存の deploy-theme.yml と同じ Secrets):
  *   GHOST_ADMIN_API_URL  例: https://example.com
@@ -20,6 +23,7 @@
  *   GHOST_ADMIN_API_URL=... GHOST_ADMIN_API_KEY=... node scripts/hyperstrata-sync.mjs --dry-run
  */
 import {createHmac} from 'node:crypto';
+import {readFile, writeFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 
 /** 引用タグ名の接頭辞。`#` 始まりのため Ghost では内部タグとして扱われる */
@@ -30,6 +34,11 @@ const REF_TAG_SLUG_PREFIX = 'hash-ref-';
 const TOKEN_TTL_SECONDS = 5 * 60;
 /** Admin API のバージョン指定ヘッダー値 */
 const ADMIN_API_VERSION = 'v5.0';
+/**
+ * Hyperstrata グラフ用 JSON の書き出し先(リポジトリルートからの相対パス)。
+ * テーマ zip に同梱され、テンプレートから `{{asset "graph.json"}}` で参照できる位置に置く。
+ */
+export const GRAPH_JSON_PATH = 'assets/graph.json';
 
 /**
  * Ghost Admin API 用の JWT を生成する。
@@ -158,6 +167,40 @@ export function selectOrphanRefTags(tags) {
 }
 
 /**
+ * Hyperstrata グラフ用 JSON(graph.json)の内容を組み立てる。
+ *
+ * 記事は公開日の降順(新しい記事が先頭)、同じ公開日は slug 順に並べ、入力順に依存しない
+ * 安定した出力にする(差分の有無で更新要否を判定するため)。引用先は引用タグではなく
+ * 本文から抽出した slug をそのまま使う(公開済み記事へのリンクだけが含まれる)。
+ *
+ * @param {object} params
+ * @param {Array<{slug: string, title: string, url: string, published_at: string}>} params.posts 公開済み記事
+ * @param {Map<string, string[]>} params.referencedSlugsBySlug 記事 slug → 引用先 slug の対応表
+ * @returns {{posts: Array<{slug: string, title: string, url: string, publishedAt: string, refs: string[]}>}}
+ */
+export function buildGraph({posts, referencedSlugsBySlug}) {
+    const nodes = posts.map((post) => {
+        const refs = referencedSlugsBySlug.get(post.slug);
+        if (!refs) {
+            throw new Error(`記事 ${post.slug} の引用先が対応表にありません`);
+        }
+        return {slug: post.slug, title: post.title, url: post.url, publishedAt: post.published_at, refs};
+    });
+    nodes.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt) || a.slug.localeCompare(b.slug));
+    return {posts: nodes};
+}
+
+/**
+ * graph.json の内容を、差分検出しやすい安定した文字列(2 スペースインデント・末尾改行)にする。
+ *
+ * @param {ReturnType<typeof buildGraph>} graph
+ * @returns {string}
+ */
+export function serializeGraph(graph) {
+    return `${JSON.stringify(graph, null, 2)}\n`;
+}
+
+/**
  * Ghost Admin API の薄いクライアントを生成する。
  *
  * @param {{adminUrl: string, apiKey: string}} config
@@ -229,6 +272,35 @@ async function pruneOrphanRefTags(client, refTags, dryRun) {
     return orphanTags.length;
 }
 
+/**
+ * graph.json を書き出す。既存ファイルと内容が同じなら書き込まない(差分の有無を戻り値で返す)。
+ * ファイルが無い場合は初回生成として差分ありとみなす。
+ *
+ * @param {ReturnType<typeof buildGraph>} graph
+ * @param {boolean} dryRun true のときは差分の有無だけ表示して書き込まない
+ * @returns {Promise<boolean>} 差分があった(書き込んだ、または dry-run で書き込む予定の)場合 true
+ */
+async function writeGraphJson(graph, dryRun) {
+    const next = serializeGraph(graph);
+    const graphPath = new URL(`../${GRAPH_JSON_PATH}`, import.meta.url);
+    let current = null;
+    try {
+        current = await readFile(graphPath, 'utf8');
+    } catch (error) {
+        if (error.code !== 'ENOENT') {
+            throw error;
+        }
+    }
+    if (current === next) {
+        return false;
+    }
+    console.log(`[graph] ${GRAPH_JSON_PATH}: ${graph.posts.length} 件の記事で${current === null ? '新規作成' : '更新'}`);
+    if (!dryRun) {
+        await writeFile(graphPath, next);
+    }
+    return true;
+}
+
 async function main() {
     const dryRun = process.argv.includes('--dry-run');
     const adminUrl = process.env.GHOST_ADMIN_API_URL;
@@ -243,9 +315,14 @@ async function main() {
     const postUrlToSlug = new Map(posts.map(post => [post.url, post.slug]));
     console.log(`公開済み記事 ${posts.length} 件を確認します${dryRun ? '(dry-run)' : ''}`);
 
+    const referencedSlugsBySlug = new Map(posts.map(post => [
+        post.slug,
+        extractReferencedSlugs({html: post.html, siteUrl, postUrlToSlug, selfSlug: post.slug})
+    ]));
+
     let updatedCount = 0;
     for (const post of posts) {
-        const referencedSlugs = extractReferencedSlugs({html: post.html, siteUrl, postUrlToSlug, selfSlug: post.slug});
+        const referencedSlugs = referencedSlugsBySlug.get(post.slug);
         const plan = planTagUpdate({existingTags: post.tags ?? [], referencedSlugs});
         if (!plan.changed) {
             continue;
@@ -261,7 +338,8 @@ async function main() {
     const refTags = await client.getRefTags();
     await ensureRefTagDescriptions(client, refTags, dryRun);
     const prunedCount = await pruneOrphanRefTags(client, refTags, dryRun);
-    console.log(`完了: ${updatedCount} 件の記事を更新、${prunedCount} 件の引用タグを削除${dryRun ? '予定' : ''}`);
+    const graphChanged = await writeGraphJson(buildGraph({posts, referencedSlugsBySlug}), dryRun);
+    console.log(`完了: ${updatedCount} 件の記事を更新、${prunedCount} 件の引用タグを削除${dryRun ? '予定' : ''}、graph.json は${graphChanged ? '更新' : '変更なし'}`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

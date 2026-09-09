@@ -1,8 +1,10 @@
 /**
  * Hyperstrata 引用グラフビュー
  *
- * サーバー側(Handlebars)が描画した記事一覧(data 属性に slug / 公開日 / 引用先 / 種別を持つ)を
- * 読み取り、SVG でグラフを描画する。外部ライブラリには依存しない。描画先は 2 種類ある。
+ * scripts/hyperstrata-sync.mjs が生成する assets/graph.json(公開記事の slug / タイトル / URL / 公開日 / 引用先)を
+ * fetch で読み取り、SVG でグラフを描画する。外部ライブラリには依存しない。描画先は 2 種類ある。
+ * graph.json の URL はテンプレートが data-strata-graph-url({{asset "graph.json"}})で渡す。
+ * 本文の表示を優先するため、初期化は requestIdleCallback で遅らせ、fetch は低優先度で行う。
  *
  * 1. custom-strata.hbs([data-strata]): 固定ページ用。縦軸を時間(公開日)としたアーク図(新しい記事が上)。
  *    年ごとの帯を地層として塗り分け、引用の線は古い層へ伸びる根として左に膨らむ弧で描く
@@ -16,12 +18,13 @@
  *    境界は波線、記事は種(楕円)、現在記事は芽吹いた種、引用の線は古い層へ伸びる根として描く。
  *    種にマウスを乗せると HTML のツールチップでタイトルと公開日を表示する
  *
- * - ノード: 記事。クリックで記事ページへ遷移する
+ * - ノード: 記事。クリックで記事ページへ遷移する(支援技術向けの名前は aria-label で与える)
  * - エッジ: 引用関係(引用元 → 引用先)
- * - JavaScript が無効な環境では元の記事一覧がそのまま表示される(有効時も支援技術向けに残す)
+ * - graph.json の取得や内容の検証に失敗した場合は console.error に出力し、グラフは描画しない
  *
- * レイアウト計算(buildLayout / buildPaneLayout / assignColumns / computeEmphasis / buildStrataBands / strataBoundaryPath)は DOM に依存しない
- * 純粋関数として window.HyperstrataGraph に公開し、scripts/strata-graph.test.mjs から検証する。
+ * レイアウト計算(buildLayout / buildPaneLayout / assignColumns / computeEmphasis / buildStrataBands / strataBoundaryPath)と
+ * graph.json の検証(parseGraph)は DOM に依存しない純粋関数として window.HyperstrataGraph に公開し、
+ * scripts/strata-graph.test.mjs から検証する。
  */
 (function () {
     const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -89,22 +92,48 @@
     }
 
     /**
-     * 記事一覧(<li data-slug ...>)からレイアウト計算用の記事配列を作る。
+     * graph.json の内容を検証し、記事配列を取り出す。
      *
-     * @param {HTMLElement} list
+     * 必須項目(slug / title / url / publishedAt / refs)が欠けたデータは、描画途中で分かりにくく壊れるより
+     * ここで例外にして早期に失敗させる。
+     *
+     * @param {unknown} data graph.json をパースした値
+     * @returns {Array<{slug: string, title: string, url: string, publishedAt: string, refs: string[]}>}
      */
-    function readPostsFromList(list) {
-        return Array.from(list.querySelectorAll('[data-slug]')).map(function (item) {
-            const link = item.querySelector('a');
-            const refs = (item.dataset.refs || '').split(',').filter(Boolean);
-            return {
-                slug: item.dataset.slug,
-                title: link.textContent.trim(),
-                url: link.getAttribute('href'),
-                publishedAt: item.dataset.published,
-                refs: refs
-            };
+    function parseGraph(data) {
+        if (!data || !Array.isArray(data.posts)) {
+            throw new Error('graph.json に posts 配列がありません');
+        }
+        const stringFields = ['slug', 'title', 'url', 'publishedAt'];
+        data.posts.forEach(function (post, index) {
+            stringFields.forEach(function (field) {
+                if (typeof post[field] !== 'string') {
+                    throw new Error('graph.json の posts[' + index + '] に ' + field + ' がありません');
+                }
+            });
+            if (!Array.isArray(post.refs)) {
+                throw new Error('graph.json の posts[' + index + '] に refs 配列がありません');
+            }
         });
+        return data.posts;
+    }
+
+    /**
+     * graph.json を低優先度で取得して記事配列を返す。
+     *
+     * @param {string} url テンプレートが data-strata-graph-url で渡す graph.json の URL
+     * @returns {Promise<Array<object>>}
+     */
+    function loadGraph(url) {
+        if (!url) {
+            return Promise.reject(new Error('data-strata-graph-url が設定されていません'));
+        }
+        return fetch(url, {priority: 'low'}).then(function (response) {
+            if (!response.ok) {
+                throw new Error('graph.json の取得に失敗しました: ' + response.status + ' ' + url);
+            }
+            return response.json();
+        }).then(parseGraph);
     }
 
     function createElement(name, attributes) {
@@ -747,8 +776,15 @@
             return;
         }
         setupPaneToggle(pane);
-        const list = pane.querySelector('[data-strata-list]');
-        const posts = readPostsFromList(list);
+        loadGraph(pane.dataset.strataGraphUrl).then(function (posts) {
+            renderPane(pane, posts);
+        }).catch(function (error) {
+            console.error('[Hyperstrata] 引用グラフペインを描画できません:', error);
+        });
+    }
+
+    /** 取得した記事配列からペインの SVG を描画してスクロール領域に挿入する */
+    function renderPane(pane, posts) {
         if (posts.length === 0) {
             return;
         }
@@ -770,8 +806,7 @@
             dateLocale: document.documentElement.lang || undefined
         });
         const scroll = pane.querySelector('[data-strata-scroll]');
-        scroll.insertBefore(svg, list);
-        list.classList.add('is-sr-only');
+        scroll.appendChild(svg);
         pane.classList.add('is-rendered');
         setupTooltip(pane, svg);
 
@@ -784,13 +819,21 @@
         }
     }
 
+    /** custom-strata.hbs の固定ページ用グラフを初期化する */
     function init() {
         const container = document.querySelector('[data-strata]');
         if (!container) {
             return;
         }
-        const list = container.querySelector('[data-strata-list]');
-        const posts = readPostsFromList(list);
+        loadGraph(container.dataset.strataGraphUrl).then(function (posts) {
+            renderPage(container, posts);
+        }).catch(function (error) {
+            console.error('[Hyperstrata] 引用グラフを描画できません:', error);
+        });
+    }
+
+    /** 取得した記事配列から固定ページ用の SVG を描画してコンテナに挿入する */
+    function renderPage(container, posts) {
         if (posts.length === 0) {
             return;
         }
@@ -809,9 +852,7 @@
         const figure = document.createElement('div');
         figure.className = 'gh-strata-graph';
         figure.appendChild(svg);
-        container.insertBefore(figure, list);
-        // 一覧は支援技術向けに残しつつ視覚的には非表示にする
-        list.classList.add('is-sr-only');
+        container.appendChild(figure);
         container.classList.add('is-rendered');
     }
 
@@ -821,13 +862,20 @@
         assignColumns: assignColumns,
         computeEmphasis: computeEmphasis,
         buildStrataBands: buildStrataBands,
-        strataBoundaryPath: strataBoundaryPath
+        strataBoundaryPath: strataBoundaryPath,
+        parseGraph: parseGraph
     };
 
     if (typeof document !== 'undefined') {
+        // 本文の表示を優先するため、ブラウザが手隙になってから初期化する(未対応ブラウザは setTimeout で代替)
         const start = function () {
-            init();
-            initPane();
+            const schedule = window.requestIdleCallback || function (callback) {
+                setTimeout(callback, 0);
+            };
+            schedule(function () {
+                init();
+                initPane();
+            });
         };
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', start);

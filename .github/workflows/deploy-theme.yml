@@ -12,10 +12,14 @@
 # pnpm zip の出力名はそのまま source.zip になるため、アップロード前に別名へリネームする。
 name: Deploy Theme
 
+# workflow_dispatch は hyperstrata-sync.yml が graph.json を main に push した後に呼ぶためのもの。
+# GITHUB_TOKEN による push は他のワークフローの push トリガーを起動しない(GitHub の仕様)ため、
+# 同期ワークフローが `gh workflow run` で明示的にこのワークフローを起動する。
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
