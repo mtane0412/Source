@@ -3,7 +3,7 @@
  *
  * Ghost Admin API との通信を伴う処理はテスト対象外とし、
  * 本文HTMLからの引用先slug抽出、タグ差分の計算、
- * Admin API 用トークン生成の3点を検証する。
+ * Admin API 用トークン生成、不要になった引用タグの判定を検証する。
  */
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,6 +14,7 @@ import {
     planTagUpdate,
     createAdminToken,
     buildRefTagsQuery,
+    selectOrphanRefTags,
     REF_TAG_PREFIX
 } from './hyperstrata-sync.mjs';
 
@@ -136,8 +137,35 @@ test('createAdminToken: "id:secret" 形式でないキーは例外を投げる',
     assert.throws(() => createAdminToken('invalid-key', 0), /GHOST_ADMIN_API_KEY/);
 });
 
-test('buildRefTagsQuery: 引用タグ一覧のクエリは "#" を含まず、フィルタが URL エンコードされている', () => {
+test('buildRefTagsQuery: 引用タグ一覧のクエリは "#" を含まず、フィルタが URL エンコードされ、記事数を含める', () => {
     const query = buildRefTagsQuery();
     assert.ok(!query.includes('#'), 'URL クエリに "#" が含まれるとフラグメントとして切り捨てられる');
-    assert.equal(query, `/tags/?limit=all&filter=${encodeURIComponent("slug:~^'hash-ref-'")}`);
+    assert.equal(query, `/tags/?limit=all&include=count.posts&filter=${encodeURIComponent("slug:~^'hash-ref-'")}`);
+});
+
+test('selectOrphanRefTags: どの記事にも付いていない引用タグだけを削除対象にする', () => {
+    const tags = [
+        {id: 'tag-1', name: `${REF_TAG_PREFIX}old-note`, slug: 'hash-ref-old-note', count: {posts: 0}},
+        {id: 'tag-2', name: `${REF_TAG_PREFIX}hyperstrata-introduction`, slug: 'hash-ref-hyperstrata-introduction', count: {posts: 2}},
+        {id: 'tag-3', name: `${REF_TAG_PREFIX}renamed-note`, slug: 'hash-ref-renamed-note', count: {posts: 0}}
+    ];
+    const result = selectOrphanRefTags(tags);
+    assert.deepEqual(result.map(tag => tag.id), ['tag-1', 'tag-3']);
+});
+
+test('selectOrphanRefTags: 引用タグ以外の内部タグ・公開タグは記事数が0でも削除対象にしない', () => {
+    const tags = [
+        {id: 'tag-1', name: '#internal-only', slug: 'hash-internal-only', count: {posts: 0}},
+        {id: 'tag-2', name: 'メモ', slug: 'memo', count: {posts: 0}},
+        {id: 'tag-3', name: `${REF_TAG_PREFIX}old-note`, slug: 'hash-ref-old-note', count: {posts: 0}}
+    ];
+    const result = selectOrphanRefTags(tags);
+    assert.deepEqual(result.map(tag => tag.id), ['tag-3']);
+});
+
+test('selectOrphanRefTags: 記事数(count.posts)が取得できていない引用タグがあれば例外を投げる', () => {
+    const tags = [
+        {id: 'tag-1', name: `${REF_TAG_PREFIX}old-note`, slug: 'hash-ref-old-note'}
+    ];
+    assert.throws(() => selectOrphanRefTags(tags), /count\.posts/);
 });
