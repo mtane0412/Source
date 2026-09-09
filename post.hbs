@@ -3,6 +3,11 @@
 
 {{#post}}
 
+{{!-- Hyperstrata: 左側固定の引用グラフペイン。テーマ設定(show_strata_pane)で OFF にできる --}}
+{{#if @custom.show_strata_pane}}
+    {{> "strata-pane"}}
+{{/if}}
+
 <main class="gh-main">
 
     <article class="gh-article {{post_class}}">

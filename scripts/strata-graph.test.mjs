@@ -97,3 +97,134 @@ test('buildLayout: 公開日が解釈できないノードは Fail-Fast で例�
         /公開日/
     );
 });
+
+/* ------------------------------------------------------------------
+ * 記事ページ左側の固定ペイン(partials/strata-pane.hbs)向けレイアウト
+ * ------------------------------------------------------------------ */
+
+/** ペイン用 API も含めて読み込む */
+function ペインを読み込む() {
+    const window = {};
+    vm.runInNewContext(スクリプト, {window});
+    const api = window.HyperstrataGraph;
+    const 正規化 = value => JSON.parse(JSON.stringify(value));
+    return {
+        buildPaneLayout: (posts, options) => 正規化(api.buildPaneLayout(posts, options)),
+        assignLanes: edges => 正規化(api.assignLanes(edges)),
+        computeEmphasis: (edges, slug, hops) => 正規化(api.computeEmphasis(edges, slug, hops))
+    };
+}
+
+const ペイン設定 = {rowHeight: 26, monthGap: 30, paddingTop: 20, paddingBottom: 40};
+
+/** 月ラベルはローカル時刻で判定するため、日付は月の中旬(タイムゾーンで月が変わらない)にする */
+const ペイン記事 = [
+    {slug: 'oldest', title: '最初の記事', url: '/oldest/', publishedAt: '2026-01-15T12:00:00.000Z', refs: [], kind: ''},
+    {slug: 'middle', title: '中間の記事', url: '/middle/', publishedAt: '2026-01-20T12:00:00.000Z', refs: ['oldest'], kind: ''},
+    {slug: 'newest', title: '最新の記事', url: '/newest/', publishedAt: '2026-03-15T12:00:00.000Z', refs: ['oldest'], kind: 'supplement'}
+];
+
+test('buildPaneLayout: ノードは新しい記事が上(row 0)になり、y が行ごとに増える', () => {
+    const {buildPaneLayout} = ペインを読み込む();
+    const layout = buildPaneLayout(ペイン記事, ペイン設定);
+    assert.deepEqual(layout.nodes.map(node => node.slug), ['newest', 'middle', 'oldest']);
+    assert.deepEqual(layout.nodes.map(node => node.row), [0, 1, 2]);
+    assert.ok(layout.nodes[0].y < layout.nodes[1].y);
+    assert.ok(layout.nodes[1].y < layout.nodes[2].y);
+    // 同じ月の隣接ノードは rowHeight ぶんだけ離れる
+    assert.equal(layout.nodes[2].y - layout.nodes[1].y, ペイン設定.rowHeight);
+});
+
+test('buildPaneLayout: 月が変わるごとに YYYY-MM の区切りを置き、monthGap ぶん余白を空ける', () => {
+    const {buildPaneLayout} = ペインを読み込む();
+    const layout = buildPaneLayout(ペイン記事, ペイン設定);
+    assert.deepEqual(layout.monthMarks.map(mark => mark.label), ['2026-03', '2026-01']);
+    // 区切りは各月の最初のノードより上にある
+    assert.ok(layout.monthMarks[0].y < layout.nodes[0].y);
+    assert.ok(layout.monthMarks[1].y < layout.nodes[1].y);
+    assert.ok(layout.monthMarks[1].y > layout.nodes[0].y);
+    // 月をまたぐ隣接ノードは rowHeight + monthGap ぶん離れる
+    assert.equal(layout.nodes[1].y - layout.nodes[0].y, ペイン設定.rowHeight + ペイン設定.monthGap);
+    assert.equal(layout.height, layout.nodes[2].y + ペイン設定.paddingBottom);
+});
+
+test('buildPaneLayout: エッジは行番号(fromRow/toRow)とレーンを持ち、fromRow < toRow になる', () => {
+    const {buildPaneLayout} = ペインを読み込む();
+    const layout = buildPaneLayout(ペイン記事, ペイン設定);
+    assert.deepEqual(
+        layout.edges.map(edge => [edge.from, edge.to, edge.fromRow, edge.toRow, edge.kind]),
+        [
+            ['newest', 'oldest', 0, 2, 'supplement'],
+            ['middle', 'oldest', 1, 2, '']
+        ]
+    );
+    assert.ok(layout.edges.every(edge => typeof edge.lane === 'number'));
+});
+
+test('buildPaneLayout: 空配列でも空のレイアウトを返す', () => {
+    const {buildPaneLayout} = ペインを読み込む();
+    assert.deepEqual(buildPaneLayout([], ペイン設定), {nodes: [], edges: [], monthMarks: [], laneCount: 0, height: 0});
+});
+
+test('assignLanes: 隣接行を結ぶエッジはレーン 0(直線)になる', () => {
+    const {assignLanes} = ペインを読み込む();
+    const edges = assignLanes([{fromRow: 0, toRow: 1}]);
+    assert.equal(edges[0].lane, 0);
+});
+
+test('assignLanes: 行範囲が重なるエッジは別のレーンに割り当てる', () => {
+    const {assignLanes} = ペインを読み込む();
+    const edges = assignLanes([{fromRow: 0, toRow: 3}, {fromRow: 1, toRow: 3}, {fromRow: 2, toRow: 4}]);
+    // 0→3 / 1→3 / 2→4 はいずれも行 2〜3 で重なるので、3 本とも別レーン(1 以上)になる
+    const lanes = edges.map(edge => edge.lane);
+    assert.equal(new Set(lanes).size, 3);
+    assert.ok(lanes.every(lane => lane >= 1));
+});
+
+test('assignLanes: 端の行だけを共有するエッジ(0→2 と 2→4)は同じレーンを再利用できる', () => {
+    const {assignLanes} = ペインを読み込む();
+    const edges = assignLanes([{fromRow: 0, toRow: 2}, {fromRow: 2, toRow: 4}]);
+    assert.equal(edges[0].lane, 1);
+    assert.equal(edges[1].lane, 1);
+});
+
+test('assignLanes: 入力の並び順を保ち、元の配列を変更しない', () => {
+    const {assignLanes} = ペインを読み込む();
+    const 入力 = [{fromRow: 2, toRow: 5, from: 'b'}, {fromRow: 0, toRow: 3, from: 'a'}];
+    const edges = assignLanes(入力);
+    assert.deepEqual(edges.map(edge => edge.from), ['b', 'a']);
+    assert.equal('lane' in 入力[0], false);
+});
+
+/** 引用チェーン: a → b → c → d(矢印は「引用する → 引用される」)、e は孤立 */
+const 連鎖エッジ = [
+    {from: 'a', to: 'b'},
+    {from: 'b', to: 'c'},
+    {from: 'c', to: 'd'}
+];
+
+test('computeEmphasis: 現在記事から引用の向きを問わず 2 ホップまでの距離を返す', () => {
+    const {computeEmphasis} = ペインを読み込む();
+    const emphasis = computeEmphasis(連鎖エッジ, 'b', 2);
+    assert.deepEqual(emphasis.nodes, {b: 0, a: 1, c: 1, d: 2});
+});
+
+test('computeEmphasis: エッジの距離は両端ノードの近いほうの距離 + 1 になる', () => {
+    const {computeEmphasis} = ペインを読み込む();
+    const emphasis = computeEmphasis(連鎖エッジ, 'b', 2);
+    assert.deepEqual(emphasis.edges, [1, 1, 2]);
+});
+
+test('computeEmphasis: ホップ数の上限を超えるノード・エッジは含めない(距離 -1)', () => {
+    const {computeEmphasis} = ペインを読み込む();
+    const emphasis = computeEmphasis(連鎖エッジ, 'a', 1);
+    assert.deepEqual(emphasis.nodes, {a: 0, b: 1});
+    assert.deepEqual(emphasis.edges, [1, -1, -1]);
+});
+
+test('computeEmphasis: 現在記事がグラフに無ければ何も強調しない', () => {
+    const {computeEmphasis} = ペインを読み込む();
+    const emphasis = computeEmphasis(連鎖エッジ, 'missing', 2);
+    assert.deepEqual(emphasis.nodes, {});
+    assert.deepEqual(emphasis.edges, [-1, -1, -1]);
+});
