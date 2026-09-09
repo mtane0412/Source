@@ -1,0 +1,34 @@
+{{!--
+    Hyperstrata: 記事ページ左側の固定引用グラフペイン。
+
+    post.hbs から {{#post}} コンテキスト内で呼ばれ、現在記事の slug を data-current-slug で渡す。
+    サーバー側では公開記事の一覧を <li> に data 属性(slug / 公開日 / 引用先 slug / 種別)付きで描画し
+    (custom-strata.hbs と同じ形式)、assets/js/strata-graph.js の initPane がそれを読み取って
+    レーン付きの SVG グラフを描く。JavaScript が無効な環境では一覧がそのまま記事へのリンクとして表示される。
+
+    引用タグ(#ref-<slug>)は scripts/hyperstrata-sync.mjs が自動付与する。内部タグは foreach の既定では
+    除外されるため visibility="all" を指定する。get ヘルパーの limit は Ghost 6 で 100 件が上限のため、
+    新しい順に取得し、公開記事が 100 件を超えた場合は古い記事がグラフに含まれない。
+--}}
+<aside class="gh-strata-pane" data-strata-pane data-current-slug="{{slug}}" data-strata-label="{{t "Citation graph"}}">
+    <button class="gh-strata-pane-toggle" type="button" aria-label="{{t "Toggle citation graph"}}" aria-expanded="false" data-strata-toggle>
+        <span class="gh-strata-pane-toggle-icon" aria-hidden="true"></span>
+    </button>
+    <div class="gh-strata-pane-scroll" data-strata-scroll>
+        <ol class="gh-strata-list gh-strata-pane-list" data-strata-list>
+            {{#get "posts" include="tags" limit="100" order="published_at desc" as |posts|}}
+                {{#foreach posts}}
+                    <li
+                        data-slug="{{slug}}"
+                        data-published="{{date format="YYYY-MM-DD[T]HH:mm:ssZ"}}"
+                        data-refs="{{#foreach tags visibility="all"}}{{#match slug "~^" "hash-ref-"}}{{description}},{{/match}}{{/foreach}}"
+                        data-kind="{{#has tag="#correction"}}correction{{else}}{{#has tag="#supplement"}}supplement{{else}}{{#has tag="#continuation"}}continuation{{else}}{{#has tag="#reversal"}}reversal{{/has}}{{/has}}{{/has}}{{/has}}"
+                    >
+                        <a href="{{url}}">{{title}}</a>
+                        <time datetime="{{date format="YYYY-MM-DD"}}">{{date}}</time>
+                    </li>
+                {{/foreach}}
+            {{/get}}
+        </ol>
+    </div>
+</aside>

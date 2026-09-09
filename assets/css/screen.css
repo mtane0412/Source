@@ -2713,6 +2713,219 @@ figcaption a {
     text-decoration: underline;
 }
 
+/* Hyperstrata: 記事ページ左側の固定引用グラフペイン(partials/strata-pane.hbs)。
+   body に post-template と has-strata-pane(テーマ設定 show_strata_pane が ON)が揃ったときだけ
+   .gh-viewport をペイン幅ぶん右にオフセットする。ヘッダー・フッターも .gh-viewport 内にあるため一緒にずれる。
+   狭い画面ではペインを --strata-pane-collapsed-width の帯まで畳み、トグルボタンで開閉する */
+:root {
+    --strata-pane-width: clamp(240px, 24vw, 340px);
+    --strata-pane-collapsed-width: 22px;
+}
+
+.post-template.has-strata-pane .gh-viewport {
+    margin-left: var(--strata-pane-width);
+}
+
+.gh-strata-pane {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 100;
+    width: var(--strata-pane-width);
+    /* --color-lighter-gray は半透明のため、背景色の上に重ねて本文が透けないようにする */
+    background-color: var(--background-color);
+    background-image: linear-gradient(var(--color-lighter-gray), var(--color-lighter-gray));
+    border-right: 1px solid var(--color-border);
+}
+
+/* ペイン内部は本文と独立してスクロールする(スクロールバーは非表示) */
+.gh-strata-pane-scroll {
+    position: absolute;
+    inset: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+}
+
+.gh-strata-pane-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+/* JS 無効時のフォールバック(記事一覧)。描画後は .is-sr-only で支援技術向けに残す */
+.gh-strata-pane-list {
+    padding: 24px 16px;
+    font-size: 1.3rem;
+}
+
+.gh-strata-pane-svg {
+    display: block;
+    margin: 0 auto;
+    overflow: visible;
+}
+
+.gh-strata-pane-month-line {
+    stroke: var(--color-border);
+    stroke-width: 1;
+}
+
+.gh-strata-pane-month-label {
+    fill: var(--color-secondary-text);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-anchor: end;
+}
+
+.gh-strata-pane-edge {
+    fill: none;
+    stroke: var(--color-dark-border);
+    stroke-width: 1.2;
+    transition: stroke 0.15s ease;
+}
+
+.gh-strata-pane-edge.is-supplement {
+    stroke-dasharray: 6 4;
+}
+
+.gh-strata-pane-edge.is-continuation {
+    stroke-width: 2;
+}
+
+.gh-strata-pane-edge.is-reversal {
+    stroke-dasharray: 2 4;
+    stroke-linecap: round;
+}
+
+/* 現在の記事と直接つながる線(1 ホップ)は強調色、2 ホップは薄い強調色、無関係な線は暗くする */
+.gh-strata-pane-edge.is-level-1 {
+    stroke: var(--ghost-accent-color);
+    stroke-width: 2.4;
+}
+
+.gh-strata-pane-edge.is-level-2 {
+    stroke: var(--ghost-accent-color);
+    opacity: 0.45;
+}
+
+.gh-strata-pane-edge.is-dim {
+    stroke: var(--color-border);
+}
+
+.gh-strata-pane-node {
+    cursor: pointer;
+}
+
+.gh-strata-pane-dot {
+    fill: var(--color-dark-border);
+    stroke: transparent;
+    stroke-width: 10;
+    transition: fill 0.15s ease;
+}
+
+.gh-strata-pane-dot.is-correction {
+    fill: var(--ghost-accent-color);
+}
+
+/* 現在の記事(輪をつける)と引用チェーン上の記事を強調し、無関係な記事は暗くする */
+.gh-strata-pane-ring {
+    fill: none;
+    stroke: var(--ghost-accent-color);
+    stroke-width: 2;
+}
+
+.gh-strata-pane-node.is-level-0 .gh-strata-pane-dot,
+.gh-strata-pane-node.is-level-1 .gh-strata-pane-dot {
+    fill: var(--ghost-accent-color);
+}
+
+.gh-strata-pane-node.is-level-2 .gh-strata-pane-dot {
+    fill: var(--ghost-accent-color);
+    opacity: 0.6;
+}
+
+.gh-strata-pane-node.is-dim .gh-strata-pane-dot {
+    fill: var(--color-border);
+}
+
+.gh-strata-pane-node:hover .gh-strata-pane-dot,
+.gh-strata-pane-node:focus .gh-strata-pane-dot {
+    fill: var(--ghost-accent-color);
+    opacity: 1;
+    r: 6;
+}
+
+/* 開閉ボタンは狭い画面でだけ表示する */
+.gh-strata-pane-toggle {
+    display: none;
+}
+
+@media (max-width: 991px) {
+    :root {
+        --strata-pane-width: min(86vw, 340px);
+    }
+
+    .post-template.has-strata-pane .gh-viewport {
+        margin-left: var(--strata-pane-collapsed-width);
+    }
+
+    .gh-strata-pane {
+        transform: translateX(calc(var(--strata-pane-collapsed-width) - 100%));
+        transition: transform 0.35s ease, box-shadow 0.35s ease;
+    }
+
+    .gh-strata-pane.is-open {
+        transform: none;
+        box-shadow: 4px 0 20px rgb(0 0 0 / 0.25);
+    }
+
+    /* 畳んだ状態では帯の部分だけが見えるため、スクロール領域を帯の左側に収める */
+    .gh-strata-pane-scroll {
+        right: var(--strata-pane-collapsed-width);
+    }
+
+    .gh-strata-pane-toggle {
+        position: absolute;
+        top: 50%;
+        right: 0;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: var(--strata-pane-collapsed-width);
+        height: 72px;
+        padding: 0;
+        background-color: var(--background-color);
+        background-image: linear-gradient(var(--color-lighter-gray), var(--color-lighter-gray));
+        border: 0;
+        border-left: 1px solid var(--color-border);
+        color: var(--color-secondary-text);
+        cursor: pointer;
+        transform: translateY(-50%);
+    }
+
+    /* 右向きの三角(開く)。開いているときは左向きに回転する */
+    .gh-strata-pane-toggle-icon {
+        width: 0;
+        height: 0;
+        border-top: 5px solid transparent;
+        border-bottom: 5px solid transparent;
+        border-left: 6px solid currentColor;
+        transition: transform 0.2s ease;
+    }
+
+    .gh-strata-pane.is-open .gh-strata-pane-toggle-icon {
+        transform: rotate(180deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gh-strata-pane,
+    .gh-strata-pane-toggle-icon {
+        transition: none;
+    }
+}
+
 /* 17. Comments
 /* ---------------------------------------------------------- */
 
