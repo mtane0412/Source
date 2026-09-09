@@ -13,6 +13,7 @@ import {
     extractReferencedSlugs,
     planTagUpdate,
     createAdminToken,
+    buildRefTagsQuery,
     REF_TAG_PREFIX
 } from './hyperstrata-sync.mjs';
 
@@ -133,4 +134,10 @@ test('createAdminToken: Admin APIキーからHS256署名付きのJWTを生成す
 
 test('createAdminToken: "id:secret" 形式でないキーは例外を投げる', () => {
     assert.throws(() => createAdminToken('invalid-key', 0), /GHOST_ADMIN_API_KEY/);
+});
+
+test('buildRefTagsQuery: 引用タグ一覧のクエリは "#" を含まず、フィルタが URL エンコードされている', () => {
+    const query = buildRefTagsQuery();
+    assert.ok(!query.includes('#'), 'URL クエリに "#" が含まれるとフラグメントとして切り捨てられる');
+    assert.equal(query, `/tags/?limit=all&filter=${encodeURIComponent("slug:~^'hash-ref-'")}`);
 });

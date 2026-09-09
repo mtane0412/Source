@@ -23,6 +23,8 @@ import {fileURLToPath} from 'node:url';
 
 /** 引用タグ名の接頭辞。`#` 始まりのため Ghost では内部タグとして扱われる */
 export const REF_TAG_PREFIX = '#ref-';
+/** 引用タグの slug 接頭辞。Ghost は `#` 始まりのタグ名から `hash-` 始まりの slug を生成する */
+const REF_TAG_SLUG_PREFIX = 'hash-ref-';
 /** Admin API 用 JWT の有効期間(秒)。Ghost の上限は5分 */
 const TOKEN_TTL_SECONDS = 5 * 60;
 /** Admin API のバージョン指定ヘッダー値 */
@@ -120,6 +122,18 @@ export function planTagUpdate({existingTags, referencedSlugs}) {
 }
 
 /**
+ * 引用タグ一覧を取得する Admin API のパスとクエリを組み立てる。
+ *
+ * タグ名(`#ref-`)ではなく slug(`hash-ref-`)でフィルタする。URL クエリに `#` を含めると
+ * フラグメントとして切り捨てられフィルタが壊れるため。フィルタ文字列は URL エンコードする。
+ *
+ * @returns {string} `/tags/?limit=all&filter=...`
+ */
+export function buildRefTagsQuery() {
+    return `/tags/?limit=all&filter=${encodeURIComponent(`slug:~^'${REF_TAG_SLUG_PREFIX}'`)}`;
+}
+
+/**
  * Ghost Admin API の薄いクライアントを生成する。
  *
  * @param {{adminUrl: string, apiKey: string}} config
@@ -147,7 +161,7 @@ function createAdminClient({adminUrl, apiKey}) {
         getSiteUrl: async () => (await request('GET', '/site/')).site.url,
         getPublishedPosts: async () => (await request('GET', '/posts/?limit=all&filter=status:published&formats=html&include=tags')).posts,
         updatePostTags: (post, tags) => request('PUT', `/posts/${post.id}/`, {posts: [{tags, updated_at: post.updated_at}]}),
-        getRefTags: async () => (await request('GET', `/tags/?limit=all&filter=name:~^'${REF_TAG_PREFIX}'`)).tags,
+        getRefTags: async () => (await request('GET', buildRefTagsQuery())).tags,
         updateTagDescription: (tag, description) => request('PUT', `/tags/${tag.id}/`, {tags: [{description}]})
     };
 }
