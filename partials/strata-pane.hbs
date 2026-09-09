@@ -1,7 +1,9 @@
 {{!--
-    Hyperstrata: 記事ページ左側の固定引用グラフペイン。
+    Hyperstrata: 記事ページ・トップページ左側の固定引用グラフペイン。
 
-    post.hbs から {{#post}} コンテキスト内で呼ばれ、現在記事の slug を data-current-slug で渡す。
+    post.hbs からは {{#post}} コンテキスト内で呼ばれ、現在記事の slug を data-current-slug で渡す。
+    index.hbs からは post コンテキスト外で呼ばれるため slug は空になり、JS 側は中立モード
+    (強調も暗転もなし)でグラフを描く。
     サーバー側では公開記事の一覧を <li> に data 属性(slug / 公開日 / 引用先 slug / 種別)付きで描画し
     (custom-strata.hbs と同じ形式)、assets/js/strata-graph.js の initPane がそれを読み取って
     レーン付きの SVG グラフを描く。JavaScript が無効な環境では一覧がそのまま記事へのリンクとして表示される。

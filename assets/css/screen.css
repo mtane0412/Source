@@ -2713,16 +2713,17 @@ figcaption a {
     text-decoration: underline;
 }
 
-/* Hyperstrata: 記事ページ左側の固定引用グラフペイン(partials/strata-pane.hbs)。
-   body に post-template と has-strata-pane(テーマ設定 show_strata_pane が ON)が揃ったときだけ
-   .gh-viewport をペイン幅ぶん右にオフセットする。ヘッダー・フッターも .gh-viewport 内にあるため一緒にずれる。
+/* Hyperstrata: 記事ページ・トップページ左側の固定引用グラフペイン(partials/strata-pane.hbs)。
+   body に post-template または home-template と、has-strata-pane(テーマ設定 show_strata_pane が ON)が
+   揃ったときだけ .gh-viewport をペイン幅ぶん右にオフセットする。ヘッダー・フッターも .gh-viewport 内にあるため一緒にずれる。
    狭い画面ではペインを --strata-pane-collapsed-width の帯まで畳み、トグルボタンで開閉する */
 :root {
     --strata-pane-width: clamp(240px, 24vw, 340px);
     --strata-pane-collapsed-width: 22px;
 }
 
-.post-template.has-strata-pane .gh-viewport {
+.post-template.has-strata-pane .gh-viewport,
+.home-template.has-strata-pane .gh-viewport {
     margin-left: var(--strata-pane-width);
 }
 
@@ -2865,7 +2866,8 @@ figcaption a {
         --strata-pane-width: min(86vw, 340px);
     }
 
-    .post-template.has-strata-pane .gh-viewport {
+    .post-template.has-strata-pane .gh-viewport,
+    .home-template.has-strata-pane .gh-viewport {
         margin-left: var(--strata-pane-collapsed-width);
     }
 

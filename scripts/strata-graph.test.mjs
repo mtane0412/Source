@@ -228,3 +228,11 @@ test('computeEmphasis: 現在記事がグラフに無ければ何も強調しな
     assert.deepEqual(emphasis.nodes, {});
     assert.deepEqual(emphasis.edges, [-1, -1, -1]);
 });
+
+test('computeEmphasis: 現在記事の slug が空(トップページ)なら中立モードになり、何も暗くしない(距離 null)', () => {
+    const {computeEmphasis} = ペインを読み込む();
+    const emphasis = computeEmphasis(連鎖エッジ, '', 2);
+    assert.equal(emphasis.neutral, true);
+    assert.deepEqual(emphasis.nodes, {});
+    assert.deepEqual(emphasis.edges, [null, null, null]);
+});
