@@ -1,0 +1,19 @@
+{{!--
+    自動 OGP 画像メタタグ
+
+    feature image が設定されていない記事で、テーマ設定 ogp_generator_url に指定した
+    OGP 生成サーバー（hanatane-ogp-generator の /og エンドポイント）の URL を og:image に出力する。
+    ghost_head より前に置くこと: クローラーは最初に現れた og:image を優先するため、
+    ghost_head が出力するサイトカバー画像より先に並べる必要がある。
+    URL は og:image と twitter:image で同じものを出力する（Handlebars では変数に保持できないため二度書いている）。
+--}}
+{{#if @custom.ogp_generator_url}}
+{{#post}}
+{{#unless feature_image}}
+    <meta property="og:image" content="{{@custom.ogp_generator_url}}/og?title={{encode title}}&site={{encode @site.title}}&author={{encode primary_author.name}}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:image" content="{{@custom.ogp_generator_url}}/og?title={{encode title}}&site={{encode @site.title}}&author={{encode primary_author.name}}">
+{{/unless}}
+{{/post}}
+{{/if}}

@@ -58,6 +58,7 @@
         "gulp-postcss": "10.0.0",
         "gulp-uglify": "3.0.2",
         "gulp-zip": "6.1.0",
+        "handlebars": "4.7.9",
         "inquirer": "14.0.2",
         "postcss": "8.5.16",
         "postcss-easy-import": "4.0.0",
@@ -139,6 +140,10 @@
             "signup_subheading": {
                 "type": "text",
                 "description": "Defaults to site description when empty"
+            },
+            "ogp_generator_url": {
+                "type": "text",
+                "description": "OGP image generator origin without trailing slash, e.g. https://ogp.example.com"
             },
             "header_style": {
                 "type": "select",

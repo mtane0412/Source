@@ -43,6 +43,9 @@
         document.documentElement.className = `has-${textColor}-text`;
     </script>
 
+    {{!-- Auto-generated og:image for posts without a feature image (must come before ghost_head) --}}
+    {{> "auto-ogp"}}
+
     {{!-- This tag outputs all your advanced SEO meta, structured data, and other important settings, it should always be the last tag before the closing head tag --}}
     {{ghost_head}}
 
