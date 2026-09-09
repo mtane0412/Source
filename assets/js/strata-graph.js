@@ -5,9 +5,10 @@
  * 読み取り、SVG でグラフを描画する。外部ライブラリには依存しない。描画先は 2 種類ある。
  *
  * 1. custom-strata.hbs([data-strata]): 固定ページ用。縦軸を時間(公開日)としたアーク図(古い記事が上)
- * 2. partials/strata-pane.hbs([data-strata-pane]): 記事ページ左側の固定ペイン。新しい記事が上、
+ * 2. partials/strata-pane.hbs([data-strata-pane]): 記事ページ・トップページ左側の固定ペイン。新しい記事が上、
  *    月ごとの区切り線付き。エッジは git のブランチ図のようにレーンを分けて描き、
- *    現在の記事(data-current-slug)とその引用チェーン(2 ホップ)を強調し、無関係なものは暗くする
+ *    現在の記事(data-current-slug)とその引用チェーン(2 ホップ)を強調し、無関係なものは暗くする。
+ *    トップページでは data-current-slug が空になり、中立モード(強調も暗転もなし)で描く
  *
  * - ノード: 記事。クリックで記事ページへ遷移する
  * - エッジ: 引用関係(引用元 → 引用先)。種別タグ(#correction 等)があれば線の見た目を変える
@@ -336,10 +337,21 @@
      * @param {Array<{from: string, to: string}>} edges
      * @param {string} currentSlug
      * @param {number} maxHops
-     * @returns {{nodes: Object<string, number>, edges: number[]}} nodes は到達したノードの距離、
-     *   edges は入力順のエッジ距離(両端ノードの近いほうの距離 + 1。到達しない場合は -1)
+     * @returns {{neutral: boolean, nodes: Object<string, number>, edges: Array<number|null>}} nodes は到達したノードの距離、
+     *   edges は入力順のエッジ距離(両端ノードの近いほうの距離 + 1。到達しない場合は -1)。
+     *   currentSlug が空(トップページなど現在記事が無い場合)は中立モード(neutral: true)となり、
+     *   nodes は空、edges はすべて null で、何も強調せず何も暗くしない
      */
     function computeEmphasis(edges, currentSlug, maxHops) {
+        if (!currentSlug) {
+            return {
+                neutral: true,
+                nodes: {},
+                edges: edges.map(function () {
+                    return null;
+                })
+            };
+        }
         const neighbors = {};
         let known = false;
         edges.forEach(function (edge) {
@@ -378,7 +390,7 @@
             const value = Math.min.apply(null, candidates);
             return value > maxHops ? -1 : value;
         });
-        return {nodes: distance, edges: edgeDistances};
+        return {neutral: false, nodes: distance, edges: edgeDistances};
     }
 
     /**
@@ -404,8 +416,11 @@
             ' C ' + x + ' ' + (bottom - half) + ' ' + x0 + ' ' + (bottom - half) + ' ' + x0 + ' ' + bottom;
     }
 
-    /** 距離に応じた強調クラス名を返す(0: 現在記事、1: 直接の引用、2: 2 ホップ、-1: 無関係) */
+    /** 距離に応じた強調クラス名を返す(0: 現在記事、1: 直接の引用、2: 2 ホップ、-1: 無関係、null: 中立モードで強調なし) */
     function emphasisClass(distance) {
+        if (distance === null) {
+            return '';
+        }
         if (distance < 0) {
             return ' is-dim';
         }
@@ -455,7 +470,7 @@
             return {edge: edge, distance: emphasis.edges[index]};
         }).sort(function (a, b) {
             const rank = function (distance) {
-                return distance < 0 ? Infinity : distance;
+                return distance === null || distance < 0 ? Infinity : distance;
             };
             return rank(b.distance) - rank(a.distance);
         }).forEach(function (item) {
@@ -471,7 +486,9 @@
         // ノード。<a> で包み、<title> でタイトルと公開日をツールチップ表示する
         const nodeGroup = createElement('g', {class: 'gh-strata-pane-nodes'});
         layout.nodes.forEach(function (node) {
-            const distance = Object.prototype.hasOwnProperty.call(emphasis.nodes, node.slug) ? emphasis.nodes[node.slug] : -1;
+            // 中立モード(トップページ)では全ノードを標準色で描き、現在記事の輪も付けない
+            const distance = emphasis.neutral ? null :
+                (Object.prototype.hasOwnProperty.call(emphasis.nodes, node.slug) ? emphasis.nodes[node.slug] : -1);
             const anchor = createElement('a', {
                 class: 'gh-strata-pane-node' + emphasisClass(distance),
                 href: node.url,
@@ -513,7 +530,7 @@
         });
     }
 
-    /** 記事ページ左側の固定ペインを初期化する */
+    /** 記事ページ・トップページ左側の固定ペインを初期化する(data-current-slug が空ならトップページとして中立モードで描く) */
     function initPane() {
         const pane = document.querySelector('[data-strata-pane]');
         if (!pane) {

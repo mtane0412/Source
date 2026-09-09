@@ -220,7 +220,7 @@
             "show_strata_pane": {
                 "type": "boolean",
                 "default": true,
-                "description": "Show the Hyperstrata citation graph pane on the left side of posts",
+                "description": "Show the Hyperstrata citation graph pane on the left side of posts and the home page",
                 "group": "post"
             }
         }
