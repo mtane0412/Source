@@ -57,6 +57,36 @@
 
     </article>
 
+    {{!-- Hyperstrata: 引用ネットワーク。引用タグ(#ref-<slug>)は scripts/hyperstrata-sync.mjs が自動付与する。
+          該当が無いグループ/セクションは CSS(:has) で非表示にする。
+          Cited by の limit は Ghost の get ヘルパーが limit="all" を非推奨としているため上限100件とする --}}
+    <section class="gh-citations gh-canvas">
+        <div class="gh-citations-group">
+            <h2 class="gh-citations-title">{{t "References"}}</h2>
+            <ul class="gh-citations-list">
+                {{#foreach tags visibility="all"}}
+                    {{#match slug "~^" "hash-ref-"}}
+                        {{#get "posts" filter="slug:'{{description}}'" limit="1" as |referenced|}}
+                            {{#foreach referenced}}
+                                <li><a href="{{url}}">{{title}}</a><time datetime="{{date format="YYYY-MM-DD"}}">{{date}}</time></li>
+                            {{/foreach}}
+                        {{/get}}
+                    {{/match}}
+                {{/foreach}}
+            </ul>
+        </div>
+        <div class="gh-citations-group">
+            <h2 class="gh-citations-title">{{t "Cited by"}}</h2>
+            <ul class="gh-citations-list">
+                {{#get "posts" filter="tags:hash-ref-{{slug}}" limit="100" order="published_at asc" as |citing|}}
+                    {{#foreach citing}}
+                        <li><a href="{{url}}">{{title}}</a><time datetime="{{date format="YYYY-MM-DD"}}">{{date}}</time></li>
+                    {{/foreach}}
+                {{/get}}
+            </ul>
+        </div>
+    </section>
+
     {{#if comments}}
         <div class="gh-comments gh-canvas">
             {{comments}}
