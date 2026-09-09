@@ -1,6 +1,15 @@
 {
   "posts": [
     {
+      "slug": "hyperstrata",
+      "title": "immutableにノートを堆積する",
+      "url": "https://hanatane.net/hyperstrata/",
+      "publishedAt": "2026-09-09T11:00:41.000Z",
+      "refs": [
+        "window-film"
+      ]
+    },
+    {
       "slug": "window-film",
       "title": "縁側の窓に目隠しシートを貼った(猫のストレス対策)",
       "url": "https://hanatane.net/window-film/",
