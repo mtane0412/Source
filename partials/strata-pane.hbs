@@ -1,9 +1,9 @@
 {{!--
-    Hyperstrata: 記事ページ・トップページ左側の固定引用グラフペイン。
+    Hyperstrata: 記事ページ左側の固定引用グラフペイン。
 
-    post.hbs からは {{#post}} コンテキスト内で呼ばれ、現在記事の slug を data-current-slug で渡す。
-    home.hbs からは post コンテキスト外で呼ばれるため slug は空になり、JS 側は中立モード
-    (強調も暗転もなし)でグラフを描く。
+    post.hbs から {{#post}} コンテキスト内で呼ばれ、現在記事の slug を data-current-slug で渡す。
+    slug が空の場合、JS 側は中立モード(強調も暗転もなし)でグラフを描く。
+    トップページはこのペインではなく partials/strata-timeline.hbs の地層タイムラインを使う。
     記事一覧と引用関係は scripts/hyperstrata-sync.mjs が生成する assets/graph.json に持ち、
     assets/js/strata-graph.js が data-strata-graph-url から fetch して SVG グラフを描く。
     {{#get}} で一覧を埋め込まないのは、Ghost の get ヘルパーが 100 件上限であることと、

@@ -153,19 +153,6 @@
                 "default": "Landing",
                 "group": "homepage"
             },
-            "header_text": {
-                "type": "text",
-                "group": "homepage",
-                "description": "Defaults to site description when empty",
-                "visibility": "header_style:[Landing, Search]"
-            },
-            "background_image": {
-                "type": "boolean",
-                "default": true,
-                "description": "Use the publication cover set on the Brand tab as your background",
-                "group": "homepage",
-                "visibility": "header_style:[Landing, Search]"
-            },
             "show_featured_posts": {
                 "type": "boolean",
                 "default": false,
@@ -220,7 +207,7 @@
             "show_strata_pane": {
                 "type": "boolean",
                 "default": true,
-                "description": "Show the Hyperstrata citation graph pane on the left side of posts and the home page",
+                "description": "Show the Hyperstrata citation graph pane on the left side of posts",
                 "group": "post"
             }
         }

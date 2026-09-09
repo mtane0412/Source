@@ -8,12 +8,16 @@
  *
  * 1. custom-strata.hbs([data-strata]): 固定ページ用。縦軸を時間(公開日)としたアーク図(新しい記事が上)。
  *    年ごとの帯を地層として塗り分け、引用の線は古い層へ伸びる根として左に膨らむ弧で描く
- * 2. partials/strata-pane.hbs([data-strata-pane]): 記事ページ・トップページ左側の固定ペイン。新しい記事が上、
+ * 3. partials/strata-timeline.hbs([data-strata-timeline]): トップページの地層タイムライン。記事カードはテンプレートが
+ *    HTML で出力し、JS は各行の位置を計測して背後に SVG(月ごとの地層の帯、左のガターの種と根)を重ねる。
+ *    表示中に無い古い記事への引用はガターの端でフェードする 1 本の束にまとめ、本数をラベルで示す。
+ *    見た目(帯・種・根)は固定ペインと同じ CSS クラスを使う
+ * 2. partials/strata-pane.hbs([data-strata-pane]): 記事ページ左側の固定ペイン。新しい記事が上、
  *    月ごとの区切り線付き。記事ごとに列(col)を持ち、引用チェーンが同じ列を継いで 1 本の幹になり、
  *    複数の引用で枝分かれ、複数からの被引用で合流する git のブランチ図のように描く(本家 Hyperstrata と同じ方式)。
  *    現在の記事(data-current-slug)とその引用チェーン(2 ホップ)を強調し、無関係なものは暗くする。
  *    引用の無い孤立した記事でも、現在記事であれば強調する。
- *    トップページでは data-current-slug が空になり、中立モード(強調も暗転もなし)で描く。
+ *    data-current-slug が空の場合は中立モード(強調も暗転もなし)で描く。
  *    見た目は「地層(strata)の中を種と根が伸びる」イメージ: 月ごとの帯を地層として塗り分け(古いほど深く濃い)、
  *    境界は波線、記事は種(楕円)、現在記事は芽吹いた種、引用の線は古い層へ伸びる根として描く。
  *    種にマウスを乗せると HTML のツールチップでタイトルと公開日を表示する
@@ -22,7 +26,7 @@
  * - エッジ: 引用関係(引用元 → 引用先)
  * - graph.json の取得や内容の検証に失敗した場合は console.error に出力し、グラフは描画しない
  *
- * レイアウト計算(buildLayout / buildPaneLayout / assignColumns / computeEmphasis / buildStrataBands / strataBoundaryPath)と
+ * レイアウト計算(buildLayout / buildPaneLayout / buildTimelineLayout / assignColumns / computeEmphasis / buildStrataBands / strataBoundaryPath)と
  * graph.json の検証(parseGraph)は DOM に依存しない純粋関数として window.HyperstrataGraph に公開し、
  * scripts/strata-graph.test.mjs から検証する。
  */
@@ -428,6 +432,72 @@
     }
 
     /**
+     * トップページの地層タイムライン(partials/strata-timeline.hbs)向けのレイアウトを計算する。
+     *
+     * 行(記事カード)はテンプレートが公開日の降順で出力し、JS が DOM から計測した位置(top / bottom / y)を渡す。
+     * ここでは行の位置は動かさず、連続する同じ月の行を地層の帯(bands)にまとめ、graph.json の引用関係のうち
+     * 表示中の行どうしのものをエッジ(edges)にし、表示中に無い記事への引用は行ごとの本数(offPage)として数える。
+     * 列(col)は固定ペインと同じ assignColumns で決め、引用チェーンが 1 本の幹として同じ列を継ぐようにする。
+     * graph.json に無い行(同期前の新しい記事)は引用の無い孤立した記事として扱う。
+     *
+     * @param {Array<{slug: string, month: string, top: number, bottom: number, y: number}>} rows 表示順(新しい順)の行
+     * @param {Array<{slug: string, refs: string[]}>} posts graph.json の記事一覧
+     * @returns {{bands: object[], nodes: object[], edges: object[], offPage: object[]}}
+     */
+    function buildTimelineLayout(rows, posts) {
+        const refsOf = {};
+        posts.forEach(function (post) {
+            refsOf[post.slug] = post.refs;
+        });
+        const rowOf = {};
+        rows.forEach(function (row, index) {
+            rowOf[row.slug] = index;
+        });
+
+        const bands = [];
+        rows.forEach(function (row) {
+            const last = bands[bands.length - 1];
+            if (last && last.label === row.month) {
+                last.bottom = row.bottom;
+            } else {
+                bands.push({label: row.month, top: row.top, bottom: row.bottom, depth: bands.length});
+            }
+        });
+
+        const nodes = rows.map(function (row, index) {
+            return {slug: row.slug, row: index, y: row.y};
+        });
+        const rawEdges = [];
+        const offPage = [];
+        rows.forEach(function (row, index) {
+            let outside = 0;
+            (refsOf[row.slug] || []).forEach(function (ref) {
+                if (ref === row.slug) {
+                    return;
+                }
+                if (!Object.prototype.hasOwnProperty.call(rowOf, ref)) {
+                    outside += 1;
+                    return;
+                }
+                const target = rowOf[ref];
+                // 引用元は引用先より新しい(上にある)はずだが、同時刻などで逆転した場合も上→下に揃える
+                rawEdges.push({from: row.slug, to: ref, fromRow: Math.min(index, target), toRow: Math.max(index, target)});
+            });
+            if (outside > 0) {
+                offPage.push({slug: row.slug, row: index, count: outside});
+            }
+        });
+        const columns = assignColumns(nodes, rawEdges);
+        nodes.forEach(function (node, index) {
+            node.col = columns.cols[index];
+        });
+        const edges = rawEdges.map(function (edge) {
+            return Object.assign({}, edge, {fromCol: columns.cols[edge.fromRow], toCol: columns.cols[edge.toRow]});
+        });
+        return {bands: bands, nodes: nodes, edges: edges, offPage: offPage};
+    }
+
+    /**
      * 現在の記事から引用の向きを問わず maxHops ホップ以内にあるノード・エッジの距離を求める。
      *
      * 現在記事の存在はノード一覧で判定する。引用が一本も無い孤立した記事でも、ノードとして存在すれば
@@ -769,7 +839,7 @@
         });
     }
 
-    /** 記事ページ・トップページ左側の固定ペインを初期化する(data-current-slug が空ならトップページとして中立モードで描く) */
+    /** 記事ページ左側の固定ペインを初期化する(data-current-slug が空なら中立モードで描く) */
     function initPane() {
         const pane = document.querySelector('[data-strata-pane]');
         if (!pane) {
@@ -819,6 +889,213 @@
         }
     }
 
+    /**
+     * タイムラインの各行(記事カード)の位置を DOM から計測する。座標は行リスト(list)の上端を 0 とする。
+     * 種の y はタイトルの 1 行目の中心に合わせる(タイトルが複数行に折り返しても種が上にずれないようにするため)。
+     *
+     * @param {HTMLElement} list [data-strata-rows]
+     * @returns {Array<{slug: string, month: string, top: number, bottom: number, y: number}>}
+     */
+    function measureTimelineRows(list) {
+        const listTop = list.getBoundingClientRect().top;
+        return Array.from(list.querySelectorAll('[data-strata-row]')).map(function (row) {
+            const rect = row.getBoundingClientRect();
+            const title = row.querySelector('[data-strata-row-title]');
+            const titleRect = title.getBoundingClientRect();
+            const lineHeight = parseFloat(getComputedStyle(title).lineHeight);
+            const firstLine = Number.isNaN(lineHeight) ? titleRect.height : Math.min(lineHeight, titleRect.height);
+            return {
+                slug: row.dataset.slug,
+                month: row.dataset.month,
+                top: rect.top - listTop,
+                bottom: rect.bottom - listTop,
+                y: titleRect.top - listTop + firstLine / 2
+            };
+        });
+    }
+
+    /**
+     * タイムラインのレイアウトを SVG として描画する。行リストの背後に重ねるため、大きさは行リストと同じにする。
+     *
+     * @param {ReturnType<typeof buildTimelineLayout>} layout
+     * @param {{width: number, height: number, labelWidth: number, axisX: number, laneWidth: number, bend: number, nodeRadius: number, maxDepthShade: number, bleed: number, label: string, offPageLabel: string, compact: boolean}} options
+     *   labelWidth は月ラベル列の幅、axisX は列 0 の x 座標、bend は根が隣の列へ移るときの縦の長さ(px)、
+     *   bleed は地層を画面の端まで届かせるための左右のはみ出し幅(px)、compact は狭い画面向け(月ラベルを帯の左上に小さく置く)
+     */
+    function renderTimelineSvg(layout, options) {
+        const svg = createElement('svg', {
+            class: 'gh-strata-timeline-svg',
+            viewBox: '0 0 ' + options.width + ' ' + options.height,
+            width: options.width,
+            height: options.height,
+            'aria-label': options.label
+        });
+        const fadeId = 'gh-strata-timeline-fade';
+        const defs = createElement('defs', {});
+        const gradient = createElement('linearGradient', {id: fadeId, x1: '0', y1: '0', x2: '0', y2: '1'});
+        gradient.appendChild(createElement('stop', {offset: '0', class: 'gh-strata-timeline-fade-start'}));
+        gradient.appendChild(createElement('stop', {offset: '1', class: 'gh-strata-timeline-fade-end'}));
+        defs.appendChild(gradient);
+        svg.appendChild(defs);
+
+        // 地層の帯と境界線(見た目は固定ペインと同じクラスを使う)。画面の端まで届かせるため bleed ぶん左右にはみ出させる
+        const bleedWidth = options.width + options.bleed * 2;
+        const bandGroup = createElement('g', {class: 'gh-strata-timeline-strata', transform: 'translate(' + (-options.bleed) + ' 0)'});
+        layout.bands.forEach(function (band, index) {
+            bandGroup.appendChild(createElement('rect', {
+                class: 'gh-strata-pane-stratum',
+                x: 0, y: band.top, width: bleedWidth, height: band.bottom - band.top,
+                'data-depth': String(Math.min(band.depth, options.maxDepthShade))
+            }));
+            bandGroup.appendChild(createElement('path', {
+                class: 'gh-strata-pane-month-line',
+                d: strataBoundaryPath(band.top, bleedWidth, {amplitude: 3, wavelength: 48, phase: index})
+            }));
+        });
+        svg.appendChild(bandGroup);
+
+        // 月ラベル。通常は月ラベル列の右端に寄せ、狭い画面では帯の左上に小さく置く
+        const labelGroup = createElement('g', {class: 'gh-strata-timeline-months'});
+        layout.bands.forEach(function (band) {
+            const label = createElement('text', options.compact ?
+                {class: 'gh-strata-timeline-month-label is-compact', x: 4, y: band.top + 14} :
+                {class: 'gh-strata-timeline-month-label', x: options.labelWidth - 12, y: band.top + 24});
+            label.textContent = band.label.replace('-', '.');
+            labelGroup.appendChild(label);
+        });
+        svg.appendChild(labelGroup);
+
+        const nodeY = {};
+        layout.nodes.forEach(function (node) {
+            nodeY[node.slug] = node.y;
+        });
+        const laneOptions = {axisX: options.axisX, laneWidth: options.laneWidth, rowHeight: options.bend};
+
+        // 主軸(列 0)。最初の種から最後の種まで薄い線で結ぶ
+        if (layout.nodes.length > 0) {
+            svg.appendChild(createElement('line', {
+                class: 'gh-strata-timeline-axis',
+                x1: options.axisX, y1: layout.nodes[0].y,
+                x2: options.axisX, y2: layout.nodes[layout.nodes.length - 1].y
+            }));
+        }
+
+        // 根(表示中の行どうしの引用線)
+        const edgeGroup = createElement('g', {class: 'gh-strata-timeline-edges'});
+        layout.edges.forEach(function (edge) {
+            edgeGroup.appendChild(createElement('path', {
+                class: 'gh-strata-pane-edge',
+                d: paneEdgePath(edge, nodeY, laneOptions)
+            }));
+        });
+        svg.appendChild(edgeGroup);
+
+        // ページ外(表示中に無い古い記事)への根。使われている列の右隣を 1 本の束として下端までフェードさせ、本数をラベルで示す
+        if (layout.offPage.length > 0) {
+            const maxCol = layout.nodes.reduce(function (max, node) {
+                return Math.max(max, node.col);
+            }, 0);
+            const offX = columnX(maxCol + 1, laneOptions);
+            const offGroup = createElement('g', {class: 'gh-strata-timeline-offpage'});
+            layout.offPage.forEach(function (item) {
+                const node = layout.nodes[item.row];
+                const fromX = columnX(node.col, laneOptions);
+                const half = options.bend / 2;
+                offGroup.appendChild(createElement('path', {
+                    class: 'gh-strata-timeline-offpage-edge',
+                    stroke: 'url(#' + fadeId + ')',
+                    d: 'M ' + fromX + ' ' + node.y +
+                        ' C ' + fromX + ' ' + (node.y + half) + ' ' + offX + ' ' + (node.y + half) + ' ' + offX + ' ' + (node.y + options.bend) +
+                        ' L ' + offX + ' ' + options.height
+                }));
+            });
+            const total = layout.offPage.reduce(function (sum, item) {
+                return sum + item.count;
+            }, 0);
+            const label = createElement('text', {
+                class: 'gh-strata-timeline-offpage-label',
+                x: offX + 10,
+                y: options.height - 6
+            });
+            label.textContent = options.offPageLabel.replace('%', String(total));
+            offGroup.appendChild(label);
+            svg.appendChild(offGroup);
+        }
+
+        // 種(記事)。カードのタイトル 1 行目に合わせて置く
+        const nodeGroup = createElement('g', {class: 'gh-strata-timeline-nodes'});
+        layout.nodes.forEach(function (node) {
+            nodeGroup.appendChild(createElement('ellipse', {
+                class: 'gh-strata-pane-dot',
+                cx: columnX(node.col, laneOptions), cy: node.y,
+                rx: options.nodeRadius, ry: options.nodeRadius * 1.3
+            }));
+        });
+        svg.appendChild(nodeGroup);
+        return svg;
+    }
+
+    /** トップページの地層タイムラインを初期化する。画面幅が変わると行の位置も変わるため、リサイズのたびに描き直す */
+    function initTimeline() {
+        const container = document.querySelector('[data-strata-timeline]');
+        if (!container) {
+            return;
+        }
+        loadGraph(container.dataset.strataGraphUrl).then(function (posts) {
+            renderTimeline(container, posts);
+            let pending = null;
+            window.addEventListener('resize', function () {
+                if (pending !== null) {
+                    cancelAnimationFrame(pending);
+                }
+                pending = requestAnimationFrame(function () {
+                    pending = null;
+                    renderTimeline(container, posts);
+                });
+            });
+        }).catch(function (error) {
+            console.error('[Hyperstrata] 地層タイムラインを描画できません:', error);
+        });
+    }
+
+    /** 行の位置を計測してタイムラインの SVG を描画し、行リストの背後に差し込む(既に描いてあれば描き直す) */
+    function renderTimeline(container, posts) {
+        const list = container.querySelector('[data-strata-rows]');
+        const previous = list.querySelector('.gh-strata-timeline-svg');
+        if (previous) {
+            previous.remove();
+        }
+        const rows = measureTimelineRows(list);
+        if (rows.length === 0) {
+            return;
+        }
+        const layout = buildTimelineLayout(rows, posts);
+        const compact = list.clientWidth < 600;
+        const styles = getComputedStyle(list);
+        const labelWidth = compact ? 0 : parseFloat(styles.getPropertyValue('--strata-timeline-label-width'));
+        const laneWidth = compact ? 12 : 16;
+        // 列 0 を月ラベル列の右に置き、列が負の方向(左)へ伸びた場合もラベルに重ならないようにずらす
+        const axisX = labelWidth + (compact ? 20 : 36) - layout.nodes.reduce(function (min, node) {
+            return Math.min(min, node.col);
+        }, 0) * laneWidth;
+        const svg = renderTimelineSvg(layout, {
+            width: list.clientWidth,
+            height: list.clientHeight,
+            labelWidth: labelWidth,
+            axisX: axisX,
+            laneWidth: laneWidth,
+            bend: 40,
+            nodeRadius: compact ? 4 : 5,
+            maxDepthShade: 6,
+            bleed: 2000,
+            label: container.dataset.strataLabel || '',
+            offPageLabel: container.dataset.strataOffpageLabel || '+%',
+            compact: compact
+        });
+        list.insertBefore(svg, list.firstChild);
+        container.classList.add('is-rendered');
+    }
+
     /** custom-strata.hbs の固定ページ用グラフを初期化する */
     function init() {
         const container = document.querySelector('[data-strata]');
@@ -859,6 +1136,7 @@
     window.HyperstrataGraph = {
         buildLayout: buildLayout,
         buildPaneLayout: buildPaneLayout,
+        buildTimelineLayout: buildTimelineLayout,
         assignColumns: assignColumns,
         computeEmphasis: computeEmphasis,
         buildStrataBands: buildStrataBands,
@@ -875,6 +1153,7 @@
             schedule(function () {
                 init();
                 initPane();
+                initTimeline();
             });
         };
         if (document.readyState === 'loading') {
