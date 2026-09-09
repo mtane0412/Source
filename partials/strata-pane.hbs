@@ -24,7 +24,6 @@
                         data-slug="{{slug}}"
                         data-published="{{date format="YYYY-MM-DD[T]HH:mm:ssZ"}}"
                         data-refs="{{#foreach tags visibility="all"}}{{#match slug "~^" "hash-ref-"}}{{description}},{{/match}}{{/foreach}}"
-                        data-kind="{{#has tag="#correction"}}correction{{else}}{{#has tag="#supplement"}}supplement{{else}}{{#has tag="#continuation"}}continuation{{else}}{{#has tag="#reversal"}}reversal{{/has}}{{/has}}{{/has}}{{/has}}"
                     >
                         <a href="{{url}}">{{title}}</a>
                         <time datetime="{{date format="YYYY-MM-DD"}}">{{date}}</time>

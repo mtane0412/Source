@@ -27,9 +27,9 @@ function 読み込む() {
 }
 
 const 記事 = [
-    {slug: 'introduction', title: '紹介記事', url: '/introduction/', publishedAt: '2026-01-10T00:00:00.000Z', refs: [], kind: ''},
-    {slug: 'limits', title: '限界について', url: '/limits/', publishedAt: '2026-03-01T00:00:00.000Z', refs: ['introduction'], kind: ''},
-    {slug: 'correction', title: '紹介記事の訂正', url: '/correction/', publishedAt: '2026-05-20T00:00:00.000Z', refs: ['introduction', 'unknown-slug'], kind: 'correction'}
+    {slug: 'introduction', title: '紹介記事', url: '/introduction/', publishedAt: '2026-01-10T00:00:00.000Z', refs: []},
+    {slug: 'limits', title: '限界について', url: '/limits/', publishedAt: '2026-03-01T00:00:00.000Z', refs: ['introduction']},
+    {slug: 'correction', title: '紹介記事の訂正', url: '/correction/', publishedAt: '2026-05-20T00:00:00.000Z', refs: ['introduction', 'unknown-slug']}
 ];
 
 test('buildLayout: ノードは新しい記事が上(公開日の降順)に並び、y座標が単調増加する', () => {
@@ -44,8 +44,8 @@ test('buildLayout: ノードは新しい記事が上(公開日の降順)に並�
 test('buildLayout: 近接する公開日でも最小間隔(minGap)を確保する', () => {
     const {buildLayout} = 読み込む();
     const 同日 = [
-        {slug: 'a', title: 'a', url: '/a/', publishedAt: '2026-01-01T00:00:00.000Z', refs: [], kind: ''},
-        {slug: 'b', title: 'b', url: '/b/', publishedAt: '2026-01-01T01:00:00.000Z', refs: [], kind: ''}
+        {slug: 'a', title: 'a', url: '/a/', publishedAt: '2026-01-01T00:00:00.000Z', refs: []},
+        {slug: 'b', title: 'b', url: '/b/', publishedAt: '2026-01-01T01:00:00.000Z', refs: []}
     ];
     const layout = buildLayout(同日, {minGap: 40, pixelsPerDay: 1});
     assert.deepEqual(layout.nodes.map(node => node.slug), ['b', 'a']);
@@ -60,12 +60,12 @@ test('buildLayout: 経過日数に応じて間隔が広がる(pixelsPerDay)', ()
     assert.equal(layout.nodes[1].y - layout.nodes[0].y, 100);
 });
 
-test('buildLayout: 引用関係は「引用元 → 引用先」のエッジになり(新しい記事の順)、種別が付く', () => {
+test('buildLayout: 引用関係は「引用元 → 引用先」のエッジになる(新しい記事の順)', () => {
     const {buildLayout} = 読み込む();
     const layout = buildLayout(記事, {minGap: 40, pixelsPerDay: 1});
     assert.deepEqual(layout.edges, [
-        {from: 'correction', to: 'introduction', kind: 'correction'},
-        {from: 'limits', to: 'introduction', kind: ''}
+        {from: 'correction', to: 'introduction'},
+        {from: 'limits', to: 'introduction'}
     ]);
 });
 
@@ -78,9 +78,9 @@ test('buildLayout: 一覧に存在しない slug への引用はエッジにし�
 test('buildLayout: 年ごとの区切り(yearMarks)は新しい年から順に、その年で最も新しいノードの位置に置く', () => {
     const {buildLayout} = 読み込む();
     const 複数年 = [
-        {slug: 'a', title: 'a', url: '/a/', publishedAt: '2025-12-31T00:00:00.000Z', refs: [], kind: ''},
-        {slug: 'b', title: 'b', url: '/b/', publishedAt: '2026-01-01T00:00:00.000Z', refs: [], kind: ''},
-        {slug: 'c', title: 'c', url: '/c/', publishedAt: '2026-06-01T00:00:00.000Z', refs: [], kind: ''}
+        {slug: 'a', title: 'a', url: '/a/', publishedAt: '2025-12-31T00:00:00.000Z', refs: []},
+        {slug: 'b', title: 'b', url: '/b/', publishedAt: '2026-01-01T00:00:00.000Z', refs: []},
+        {slug: 'c', title: 'c', url: '/c/', publishedAt: '2026-06-01T00:00:00.000Z', refs: []}
     ];
     const layout = buildLayout(複数年, {minGap: 40, pixelsPerDay: 1});
     // ノードは c(2026-06), b(2026-01), a(2025-12) の順。2026 の区切りは c、2025 の区切りは a の位置
@@ -98,7 +98,7 @@ test('buildLayout: 空配列でもノード・エッジ・年ラベルが空の�
 test('buildLayout: 公開日が解釈できないノードは Fail-Fast で例外にする', () => {
     const {buildLayout} = 読み込む();
     assert.throws(
-        () => buildLayout([{slug: 'x', title: 'x', url: '/x/', publishedAt: 'not-a-date', refs: [], kind: ''}], {minGap: 40, pixelsPerDay: 1}),
+        () => buildLayout([{slug: 'x', title: 'x', url: '/x/', publishedAt: 'not-a-date', refs: []}], {minGap: 40, pixelsPerDay: 1}),
         /公開日/
     );
 });
@@ -126,9 +126,9 @@ const ペイン設定 = {rowHeight: 26, monthGap: 30, paddingTop: 20, paddingBot
 
 /** 月ラベルはローカル時刻で判定するため、日付は月の中旬(タイムゾーンで月が変わらない)にする */
 const ペイン記事 = [
-    {slug: 'oldest', title: '最初の記事', url: '/oldest/', publishedAt: '2026-01-15T12:00:00.000Z', refs: [], kind: ''},
-    {slug: 'middle', title: '中間の記事', url: '/middle/', publishedAt: '2026-01-20T12:00:00.000Z', refs: ['oldest'], kind: ''},
-    {slug: 'newest', title: '最新の記事', url: '/newest/', publishedAt: '2026-03-15T12:00:00.000Z', refs: ['oldest'], kind: 'supplement'}
+    {slug: 'oldest', title: '最初の記事', url: '/oldest/', publishedAt: '2026-01-15T12:00:00.000Z', refs: []},
+    {slug: 'middle', title: '中間の記事', url: '/middle/', publishedAt: '2026-01-20T12:00:00.000Z', refs: ['oldest']},
+    {slug: 'newest', title: '最新の記事', url: '/newest/', publishedAt: '2026-03-15T12:00:00.000Z', refs: ['oldest']}
 ];
 
 test('buildPaneLayout: ノードは新しい記事が上(row 0)になり、y が行ごとに増える', () => {
@@ -159,10 +159,10 @@ test('buildPaneLayout: エッジは行番号(fromRow/toRow)と両端の列(fromC
     const {buildPaneLayout} = ペインを読み込む();
     const layout = buildPaneLayout(ペイン記事, ペイン設定);
     assert.deepEqual(
-        layout.edges.map(edge => [edge.from, edge.to, edge.fromRow, edge.toRow, edge.kind]),
+        layout.edges.map(edge => [edge.from, edge.to, edge.fromRow, edge.toRow]),
         [
-            ['newest', 'oldest', 0, 2, 'supplement'],
-            ['middle', 'oldest', 1, 2, '']
+            ['newest', 'oldest', 0, 2],
+            ['middle', 'oldest', 1, 2]
         ]
     );
     const 列 = Object.fromEntries(layout.nodes.map(node => [node.slug, node.col]));
