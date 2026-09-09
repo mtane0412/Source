@@ -44,6 +44,9 @@ importers:
       gulp-zip:
         specifier: 6.1.0
         version: 6.1.0(gulp@5.0.1)
+      handlebars:
+        specifier: 4.7.9
+        version: 4.7.9
       inquirer:
         specifier: 14.0.2
         version: 14.0.2(@types/node@26.0.1)
